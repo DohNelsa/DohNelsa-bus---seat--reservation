@@ -20,18 +20,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-cbg_-2@a!8qdhp%l4yii#7p&u$%16z6))+qo%r)0c7_gfjg9@p'
+# Use environment variable for SECRET_KEY, fallback to default for development
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-cbg_-2@a!8qdhp%l4yii#7p&u$%16z6))+qo%r)0c7_gfjg9@p')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # Use environment variable to control DEBUG setting
-DEBUG = False
+# Convert string 'False' to boolean False
+DEBUG_ENV = os.environ.get('DJANGO_DEBUG', 'False')
+DEBUG = DEBUG_ENV.lower() in ('true', '1', 'yes', 'on')
 
-# Configure ALLOWED_HOSTS based on DEBUG setting
-if DEBUG:
-    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+# Configure ALLOWED_HOSTS from environment variable or use defaults
+ALLOWED_HOSTS_ENV = os.environ.get('ALLOWED_HOSTS', '')
+if ALLOWED_HOSTS_ENV:
+    # Split comma-separated hosts and strip whitespace
+    ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(',')]
 else:
-    # In production, specify your actual domain names
-    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', 'your-app.onrender.com']  # Replace with actual Render domain later
+    # Fallback to defaults based on DEBUG setting
+    if DEBUG:
+        ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+    else:
+        # In production, specify your actual domain names
+        ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', 'your-app.onrender.com']
 
 
 # Application definition
@@ -173,11 +182,16 @@ AFRICASTALKING_SENDER_ID = 'NelsaNdo'
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 # Additional settings to prevent 400 errors
-CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:8000', 
-    'http://127.0.0.1:8000',
-    'https://your-app.onrender.com'  # Replace with actual Render domain later
-]
+# CSRF_TRUSTED_ORIGINS can be set from environment variable or use defaults
+CSRF_TRUSTED_ORIGINS_ENV = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+if CSRF_TRUSTED_ORIGINS_ENV:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in CSRF_TRUSTED_ORIGINS_ENV.split(',')]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:8000', 
+        'http://127.0.0.1:8000',
+        'https://your-app.onrender.com'  # Replace with actual Render domain later
+    ]
 CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_HTTPONLY = False
 
