@@ -1,0 +1,355 @@
+{% extends 'NelsaApp/base.html' %}
+{% load static %}
+
+{% block title %}My Profile - MOGHAMO EXPRESS{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card shadow-lg border-0 rounded-lg mb-4">
+                <div class="card-header bg-primary text-white py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-user-circle fa-2x me-3"></i>
+                        <h4 class="mb-0">Profile Information</h4>
+                    </div>
+                </div>
+                <div class="card-body p-4">
+                    <div class="text-center mb-4">
+                        <div class="avatar-circle mb-3">
+                            <i class="fas fa-user fa-3x text-primary"></i>
+                        </div>
+                        <h5 class="mb-1">{{ user.get_full_name|default:user.username }}</h5>
+                        <p class="text-muted mb-3">{{ user.email }}</p>
+                        <div class="badge bg-info mb-3">
+                            <i class="fas fa-clock me-1"></i> Member since {{ user.date_joined|date:"M Y" }}
+                        </div>
+                    </div>
+                    
+                    <div class="profile-info">
+                        <div class="info-item mb-3">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-phone text-primary me-3"></i>
+                                <div>
+                                    <small class="text-muted d-block">Phone</small>
+                                    <strong>{{ passenger.phone|default:"Not provided" }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid mt-4">
+                        <a href="{% url 'profile_edit' %}" class="btn btn-primary">
+                            <i class="fas fa-edit me-2"></i> Edit Profile
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Booking Statistics -->
+            <div class="card shadow-lg border-0 rounded-lg mb-4">
+                <div class="card-header bg-success text-white py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-chart-bar fa-2x me-3"></i>
+                        <h5 class="mb-0">Booking Statistics</h5>
+                    </div>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row text-center">
+                        <div class="col-6 mb-3">
+                            <div class="stat-item">
+                                <h4 class="text-primary mb-1">{{ total_bookings }}</h4>
+                                <small class="text-muted">Total Bookings</small>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="stat-item">
+                                <h4 class="text-success mb-1">{{ confirmed_bookings }}</h4>
+                                <small class="text-muted">Confirmed</small>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="stat-item">
+                                <h4 class="text-warning mb-1">{{ pending_bookings }}</h4>
+                                <small class="text-muted">Pending</small>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="stat-item">
+                                <h4 class="text-danger mb-1">{{ cancelled_bookings }}</h4>
+                                <small class="text-muted">Cancelled</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-8">
+            <div class="card shadow-lg border-0 rounded-lg">
+                <div class="card-header bg-primary text-white py-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-ticket-alt fa-2x me-3"></i>
+                            <h4 class="mb-0">My Bookings</h4>
+                        </div>
+                        <a href="{% url 'booking' %}" class="btn btn-light btn-sm">
+                            <i class="fas fa-plus me-1"></i> New Booking
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Search and Filter Section -->
+                <div class="card-body border-bottom">
+                    <form method="GET" class="row g-3">
+                        <div class="col-md-4">
+                            <input type="text" name="search" value="{{ search_query }}" 
+                                   class="form-control" placeholder="Search routes, bus numbers...">
+                        </div>
+                        <div class="col-md-3">
+                            <select name="status" class="form-select">
+                                <option value="">All Status</option>
+                                <option value="Pending" {% if status_filter == 'Pending' %}selected{% endif %}>Pending</option>
+                                <option value="Confirmed" {% if status_filter == 'Confirmed' %}selected{% endif %}>Confirmed</option>
+                                <option value="Cancelled" {% if status_filter == 'Cancelled' %}selected{% endif %}>Cancelled</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="date" name="date" value="{{ date_filter }}" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="card-body p-4">
+                    {% if booking_groups %}
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Booking Group ID</th>
+                                        <th>Route</th>
+                                        <th>Date & Time</th>
+                                        <th>Seats</th>
+                                        <th>Total Amount</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for booking_group in booking_groups %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-secondary">#{{ booking_group.id }}</span>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="fas fa-route text-primary me-2"></i>
+                                                    <div>
+                                                        <strong>{{ booking_group.schedule.route.start_location }} → {{ booking_group.schedule.route.end_location }}</strong>
+                                                        <br>
+                                                        <small class="text-muted">Bus: {{ booking_group.schedule.bus.bus_number }} ({{ booking_group.schedule.bus.bus_type }})</small>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="far fa-calendar-alt text-primary me-2"></i>
+                                                    <div>
+                                                        <strong>{{ booking_group.schedule.departure_time|date:"M d, Y" }}</strong>
+                                                        <br>
+                                                        <small class="text-muted">{{ booking_group.schedule.departure_time|date:"g:i A" }}</small>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="fas fa-chair text-primary me-2"></i>
+                                                    <div>
+                                                        <strong>{{ booking_group.get_total_seats }} seat(s)</strong>
+                                                        <br>
+                                                        <small class="text-muted">{{ booking_group.get_seat_numbers|join:", " }}</small>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="fas fa-money-bill text-primary me-2"></i>
+                                                    <strong>{{ booking_group.total_amount }} FCFA</strong>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-{{ booking_group.status|lower }}">
+                                                    {% if booking_group.status == 'Pending' %}
+                                                        <i class="fas fa-clock me-1"></i>
+                                                    {% elif booking_group.status == 'Confirmed' %}
+                                                        <i class="fas fa-check me-1"></i>
+                                                    {% else %}
+                                                        <i class="fas fa-times me-1"></i>
+                                                    {% endif %}
+                                                    {{ booking_group.status }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group" role="group">
+                                                    <button type="button" class="btn btn-sm btn-info dropdown-toggle" data-bs-toggle="dropdown">
+                                                        <i class="fas fa-cog me-1"></i> Actions
+                                                    </button>
+                                                    <ul class="dropdown-menu">
+                                                        <li><a class="dropdown-item" href="#" onclick="viewBookingDetails({{ booking_group.id }})">
+                                                            <i class="fas fa-eye me-2"></i> View Details
+                                                        </a></li>
+                                                        {% if booking_group.status == 'Pending' %}
+                                                            <li><a class="dropdown-item" href="{% url 'payment' booking_group.id %}">
+                                                                <i class="fas fa-credit-card me-2"></i> Make Payment
+                                                            </a></li>
+                                                        {% endif %}
+                                                    </ul>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Pagination -->
+                        {% if booking_groups.has_other_pages %}
+                        <nav aria-label="Booking pagination" class="mt-4">
+                            <ul class="pagination justify-content-center">
+                                {% if booking_groups.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ booking_groups.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_filter %}&date={{ date_filter }}{% endif %}">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for num in booking_groups.paginator.page_range %}
+                                    {% if booking_groups.number == num %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ num }}</span>
+                                        </li>
+                                    {% elif num > booking_groups.number|add:'-3' and num < booking_groups.number|add:'3' %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_filter %}&date={{ date_filter }}{% endif %}">{{ num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if booking_groups.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ booking_groups.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if date_filter %}&date={{ date_filter }}{% endif %}">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                        {% endif %}
+                    {% else %}
+                        <div class="text-center py-5">
+                            <div class="empty-state mb-4">
+                                <i class="fas fa-ticket-alt fa-4x text-muted mb-3"></i>
+                                <h5>No Bookings Found</h5>
+                                <p class="text-muted">
+                                    {% if search_query or status_filter or date_filter %}
+                                        No bookings match your search criteria.
+                                    {% else %}
+                                        You haven't made any bookings yet.
+                                    {% endif %}
+                                </p>
+                            </div>
+                            <a href="{% url 'booking' %}" class="btn btn-primary btn-lg">
+                                <i class="fas fa-plus me-2"></i> Book a Ticket
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Booking Details Modal -->
+<div class="modal fade" id="bookingDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Booking Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="bookingDetailsContent">
+                <!-- Content will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        transition: transform 0.3s ease;
+    }
+    .card:hover {
+        transform: translateY(-5px);
+    }
+    .avatar-circle {
+        width: 100px;
+        height: 100px;
+        background-color: #f8f9fa;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto;
+    }
+    .profile-info .info-item {
+        padding: 10px;
+        border-radius: 8px;
+        transition: background-color 0.3s ease;
+    }
+    .profile-info .info-item:hover {
+        background-color: #f8f9fa;
+    }
+    .table th {
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+    }
+    .badge {
+        padding: 0.5em 0.8em;
+        font-weight: 500;
+    }
+    .btn {
+        transition: all 0.3s ease;
+    }
+    .btn:hover {
+        transform: translateY(-2px);
+    }
+    .empty-state {
+        padding: 40px 0;
+    }
+    .stat-item {
+        padding: 10px;
+        border-radius: 8px;
+        background-color: #f8f9fa;
+    }
+    .stat-item h4 {
+        margin: 0;
+        font-weight: 600;
+    }
+</style>
+
+<script>
+function viewBookingDetails(bookingGroupId) {
+    // This function can be expanded to show detailed booking information
+    // For now, it just shows a simple alert
+    alert('Booking Group #' + bookingGroupId + ' details will be shown here.');
+    // You can implement AJAX call to fetch and display detailed booking information
+}
+</script>
+{% endblock %} 

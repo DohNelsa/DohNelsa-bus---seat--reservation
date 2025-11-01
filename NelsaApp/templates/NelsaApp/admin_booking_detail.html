@@ -1,0 +1,201 @@
+{% extends 'NelsaApp/admin.html' %}
+{% load static %}
+
+{% block title %}Booking Group Details - NelsaNdo{% endblock %}
+
+{% block content %}
+<div class="admin-booking-detail">
+    <div class="admin-header">
+        <h1>Booking Group Details</h1>
+        <p>View detailed information about booking group #{{ booking_group.id }}</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
+        <div class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Booking Group Information</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-sm text-gray-500">Booking Group ID</p>
+                            <p class="font-medium">#{{ booking_group.id }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Created Date</p>
+                            <p class="font-medium">{{ booking_group.created_at|date:"F d, Y, g:i A" }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Status</p>
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                {% if booking_group.status == 'Confirmed' %}bg-green-100 text-green-800
+                                {% elif booking_group.status == 'Pending' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-red-100 text-red-800{% endif %}">
+                                {{ booking_group.status }}
+                            </span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Number of Seats</p>
+                            <p class="font-medium">{{ booking_group.bookings.count }} seat(s)</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Total Amount</p>
+                            <p class="font-medium text-lg text-green-600">{{ booking_group.total_amount }} frs</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Transaction ID</p>
+                            <p class="font-medium">
+                                {% if booking_group.transaction_id %}
+                                    {{ booking_group.transaction_id }}
+                                    {% if booking_group.transaction_verified %}
+                                        <span class="text-green-600 ml-2">✓ Verified</span>
+                                    {% else %}
+                                        <span class="text-yellow-600 ml-2">⚠ Pending Verification</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-red-600">Not provided</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">SMS Notifications</p>
+                            <p class="font-medium text-sm">
+                                {% if booking_group.status == 'Confirmed' %}
+                                    <span class="text-green-600">✓ Confirmation sent</span>
+                                {% elif booking_group.status == 'Cancelled' %}
+                                    <span class="text-red-600">✓ Cancellation sent</span>
+                                {% else %}
+                                    <span class="text-gray-500">Pending</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Journey Information</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-sm text-gray-500">Route</p>
+                            <p class="font-medium">{{ booking_group.schedule.route.start_location }} → {{ booking_group.schedule.route.end_location }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Duration</p>
+                            <p class="font-medium">{{ booking_group.schedule.route.duration }} hours</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Bus</p>
+                            <p class="font-medium">{{ booking_group.schedule.bus.bus_number }} - {{ booking_group.schedule.bus.bus_type }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Departure</p>
+                            <p class="font-medium">{{ booking_group.schedule.departure_time|date:"F d, Y, g:i A" }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Arrival</p>
+                            <p class="font-medium">{{ booking_group.schedule.arrival_time|date:"F d, Y, g:i A" }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Price per Seat</p>
+                            <p class="font-medium">{{ booking_group.schedule.price }} frs</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
+        <div class="p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Passenger Information</h3>
+            <div class="space-y-3">
+                <div>
+                    <p class="text-sm text-gray-500">Name</p>
+                    <p class="font-medium">{{ booking_group.passenger.name }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Email</p>
+                    <p class="font-medium">{{ booking_group.passenger.email }}</p>
+                </div>
+                {% if booking_group.passenger.phone %}
+                <div>
+                    <p class="text-sm text-gray-500">Phone</p>
+                    <p class="font-medium">{{ booking_group.passenger.phone }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
+        <div class="p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Seat Details</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Seat Number</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booking Date</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for booking in booking_group.bookings.all %}
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ booking.seat_number }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                    {% if booking.status == 'Confirmed' %}bg-green-100 text-green-800
+                                    {% elif booking.status == 'Pending' %}bg-yellow-100 text-yellow-800
+                                    {% else %}bg-red-100 text-red-800{% endif %}">
+                                    {{ booking.status }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ booking.booking_date|date:"M d, Y, g:i A" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex justify-between">
+        <a href="{% url 'admin_bookings' %}" class="bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+            <i class="fas fa-arrow-left mr-2"></i>Back to Bookings
+        </a>
+        <div class="flex space-x-3">
+            {% if booking_group.status == 'Pending' %}
+                <a href="{% url 'admin_confirm_booking' booking_group.id %}" class="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2" onclick="return confirm('Are you sure you want to confirm this booking group? This will send SMS notification to the passenger.')">
+                    <i class="fas fa-check mr-2"></i>Confirm Booking Group
+                </a>
+            {% endif %}
+            {% if booking_group.status != 'Cancelled' %}
+            <a href="{% url 'admin_cancel_booking' booking_group.id %}" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2" onclick="return confirm('Are you sure you want to cancel this booking group? This will send SMS notification to the passenger.')">
+                <i class="fas fa-times mr-2"></i>Cancel Booking Group
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+    .admin-booking-detail {
+        padding: 2rem;
+    }
+
+    .admin-header {
+        margin-bottom: 2rem;
+    }
+
+    .admin-header h1 {
+        color: #2c3e50;
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .admin-header p {
+        color: #7f8c8d;
+    }
+</style>
+{% endblock %} 

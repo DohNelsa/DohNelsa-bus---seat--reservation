@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Online Bus Booking</title>
+</head>
+<body style="width: 100%; height: 100vh; padding: 0 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: #f1f5f9;">
+
+    <!-- Login Container -->
+    <div style="width: 50%; height: 650px; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); padding: 40px; display: flex; flex-direction: column; justify-content: space-between; border-radius: 8px;">
+        <!-- Heading -->
+        <h1 style="text-align: center; font-size: 2rem; font-weight: bold;">Login</h1>
+
+        <!-- Login Form -->
+        <form id="loginForm" method = "POST"style="width: 100%; height: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+            <!-- Username Field -->
+            <div style="margin: 20px 0; width: 100%;">
+                <label for="username" style="font-size: 1rem; font-weight: 500;">Username:</label>
+                <input type="text" id="username" name="username" required style="width: 100%; border: 1px solid #ccc; border-radius: 8px; height: 64px; padding: 0 20px; margin-top: 8px;">
+            </div>
+
+            <!-- Password Field -->
+            <div style="margin: 20px 0; width: 100%;">
+                <label for="password" style="font-size: 1rem; font-weight: 500;">Password:</label>
+                <input type="password" id="password" name="password" required style="width: 100%; border: 1px solid #ccc; border-radius: 8px; height: 64px; padding: 0 20px; margin-top: 8px;">
+            </div>
+
+            <!-- Submit Button -->
+            {% csrf_token %}
+            <button type="submit" style="width: 100%; padding: 16px 0; display: flex; justify-content: center; align-items: center; font-size: 1.25rem; height: 48px; border-radius: 8px; background-color: #e2e8f0; border: none; cursor: pointer;">
+                Login
+            </button>
+        </form>
+
+        <!-- Error Message -->
+        <p id="error-message" style="color: red; text-align: center;"></p>
+
+        <!-- Register Link -->
+        <p style="text-align: center;">
+            Don't have an account? <a href="{% url 'user-register' %}" style="color: #3b82f6; text-decoration: none;">Register</a>
+        </p>
+    </div>
+
+</body>
+</html>
+

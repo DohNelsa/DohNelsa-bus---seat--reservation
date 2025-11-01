@@ -1,0 +1,79 @@
+{% extends 'NelsaApp/base.html' %}
+{% load static %}
+
+{% block title %}About Us - MOGHAMO EXPRESS{% endblock %}
+
+{% block content %}
+<div class="pt-20 pb-12">
+    <!-- Hero Section -->
+    <div class="relative">
+        <div class="absolute inset-0">
+            <img class="h-64 w-full object-cover" src="{% static 'images/img.jpeg' %}" alt="About MOGHAMO EXPRESS">
+            <div class="absolute inset-0 bg-gray-900/60 mix-blend-multiply"></div>
+        </div>
+        <div class="relative max-w-7xl mx-auto py-24 px-4 sm:py-32 sm:px-6 lg:px-8">
+            <h1 class="text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">About MOGHAMO EXPRESS</h1>
+            <p class="mt-6 max-w-3xl text-xl text-gray-300">Your trusted partner for safe and comfortable travel across Cameroon.</p>
+        </div>
+    </div>
+
+    <!-- Company Story Section -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+            <div>
+                <h2 class="text-3xl font-bold text-gray-900 mb-6">Our Story</h2>
+                <p class="text-lg text-gray-600 mb-4">Founded in 2010, MOGHAMO EXPRESS has grown from a small local bus service to one of Cameroon's leading transportation companies. Our journey began with a simple mission: to provide safe, reliable, and comfortable travel options for people across the country.</p>
+                <p class="text-lg text-gray-600 mb-4">Over the years, we've expanded our fleet, improved our services, and built a reputation for punctuality and customer satisfaction. Today, we operate routes connecting major cities across Cameroon such as Bamenda, Yaounde, Douala, serving thousands of passengers daily.</p>
+                <p class="text-lg text-gray-600">Our commitment to excellence and customer service has made us the preferred choice for travelers seeking a hassle-free journey experience.</p>
+            </div>
+            <div class="relative h-96 rounded-lg overflow-hidden shadow-xl">
+                <img class="w-full h-full object-cover" src="{% static 'images/img1.jpg' %}" alt="MOGHAMO EXPRESS Bus">
+            </div>
+        </div>
+    </div>
+
+    <!-- Mission & Values Section -->
+    <div class="bg-gray-50 py-16">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-900">Our Mission & Values</h2>
+                <p class="mt-4 text-lg text-gray-600">What drives us every day</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                        <i class="fas fa-shield-alt text-black text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Safety First</h3>
+                    <p class="text-gray-600">We prioritize the safety of our passengers and staff above all else, maintaining rigorous safety standards and regular vehicle maintenance.</p>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                        <i class="fas fa-clock text-black text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Reliability</h3>
+                    <p class="text-gray-600">We are committed to providing punctual services and ensuring our passengers reach their destinations on time, every time.</p>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                        <i class="fas fa-smile text-black text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Customer Satisfaction</h3>
+                    <p class="text-gray-600">We strive to exceed customer expectations by providing comfortable journeys and exceptional service throughout their travel experience.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Call to Action -->
+    <div class="bg-gray-900 py-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-3xl font-bold text-white mb-4">Ready to Travel with Us?</h2>
+            <p class="text-xl text-gray-300 mb-8">Book your next journey with MOGHAMO EXPRESS and experience the difference.</p>
+            <a href="{% url 'booking' %}" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black">
+                Book Your Ride Now
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

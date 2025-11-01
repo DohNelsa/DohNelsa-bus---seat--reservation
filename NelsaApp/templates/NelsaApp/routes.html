@@ -1,0 +1,122 @@
+{% extends 'NelsaApp/base.html' %}
+{% load static %}
+
+{% block title %}Our Routes - MOGHAMO EXPRESS{% endblock %}
+
+{% block content %}
+<div class="pt-20 pb-12">
+    <!-- Hero Section -->
+    <div class="relative">
+        <div class="absolute inset-0">
+            <img class="h-64 w-full object-cover" src="{% static 'img2.jpg' %}" alt="MOGHAMO EXPRESS Routes">
+            <div class="absolute inset-0 bg-gray-900/60 mix-blend-multiply"></div>
+        </div>
+        <div class="relative max-w-7xl mx-auto py-24 px-4 sm:py-32 sm:px-6 lg:px-8">
+            <h1 class="text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">Our Routes</h1>
+            <p class="mt-6 max-w-3xl text-xl text-gray-300">Explore our extensive network of routes connecting major cities across Cameroon.</p>
+        </div>
+    </div>
+
+    <!-- Routes Section -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900">Popular Routes</h2>
+            <p class="mt-4 text-lg text-gray-600">Discover our most popular routes with regular daily departures</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {% for route in routes %}
+            <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-gray-900">{{ route.start_location }} → {{ route.end_location }}</h3>
+                        <span class="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-100 rounded-full">
+                            {{ route.distance }} km
+                        </span>
+                    </div>
+                    <div class="space-y-4">
+                        <div class="flex items-center text-gray-600">
+                            <i class="fas fa-clock text-blue-500 mr-2"></i>
+                            <span>Duration: {{ route.duration|default:"N/A" }} hours</span>
+                        </div>
+                        <div class="flex items-center text-gray-600">
+                            <i class="fas fa-bus text-blue-500 mr-2"></i>
+                            <span>Daily Departures: {{ route.daily_departures }}</span>
+                        </div>
+                        <div class="flex items-center text-gray-600">
+                            <i class="fas fa-money-bill text-blue-500 mr-2"></i>
+                            <span>Starting from: {{ route.price|default:"N/A" }} FCFA</span>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <a href="{% url 'booking' %}" class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Book This Route
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Schedule Information -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900">Schedule Information</h2>
+            <p class="mt-4 text-lg text-gray-600">Plan your journey with our detailed schedule information</p>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div class="p-6">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Route</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departure Times</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for route in routes %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm font-medium text-gray-900">{{ route.start_location }} → {{ route.end_location }}</div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm text-gray-500">{{ route.departure_times }}</div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm text-gray-500">{{ route.duration }} hours</div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm text-gray-500">{{ route.price }} FCFA</div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Call to Action -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div class="bg-blue-600 rounded-lg shadow-xl overflow-hidden">
+            <div class="px-6 py-12 sm:px-12 sm:py-16 lg:flex lg:items-center lg:justify-between">
+                <div>
+                    <h2 class="text-3xl font-bold text-white">Ready to Start Your Journey?</h2>
+                    <p class="mt-4 text-lg text-blue-100">Book your ticket now and enjoy a comfortable ride to your destination.</p>
+                </div>
+                <div class="mt-8 lg:mt-0">
+                    <a href="{% url 'booking' %}" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-blue-600 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        Book Your Journey
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

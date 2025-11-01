@@ -1,0 +1,368 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Rides - MOGHAMO EXPRESS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com/3.4.5?plugins=forms@0.5.7,typography@0.5.13,aspect-ratio@0.4.2,container-queries@0.1.1"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <style>
+        .seat {
+            width: 40px;
+            height: 40px;
+            margin: 5px;
+            display: inline-block;
+            text-align: center;
+            line-height: 40px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+        .available {
+            background-color: #10B981;
+            color: white;
+        }
+        .booked {
+            background-color: #9CA3AF;
+            color: white;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .selected {
+            background-color: #3B82F6;
+            color: white;
+        }
+        .seat-map-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .seat-row {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        .driver-area {
+            width: 100%;
+            height: 60px;
+            background-color: #E5E7EB;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6B7280;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body class="font-['Inter'] bg-gray-50">
+    <nav class="bg-white shadow-sm fixed w-full z-50">
+        <div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <img class="h-8 w-auto" src="https://ai-public.creatie.ai/gen_page/logo_placeholder.png" alt="NELSBUS">
+                    </div>
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                        <a href="{% url 'index' %}" class="border-transparent text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">Home</a>
+                        <a href="{% url 'about_view' %}" class="border-transparent text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">About</a>
+                        <a href="#" class="border-custom text-custom border-b-2 inline-flex items-center px-1 pt-1 text-sm font-medium">Book Rides</a>
+                    </div>
+                </div>
+                <div class="hidden sm:ml-6 sm:flex sm:items-center space-x-4">
+                    {% if user.is_authenticated %}
+                        {% if user.is_staff %}
+                            <a href="{% url 'admin_dashboard' %}" class="text-blue-600 hover:text-blue-800">Admin Dashboard</a>
+                        {% endif %}
+                        <a href="{% url 'user_profile' %}" class="text-blue-600 hover:text-blue-800">My Profile</a>
+                        <a href="{% url 'logout' %}" class="text-blue-600 hover:text-blue-800">Logout</a>
+                    {% else %}
+                        <a href="{% url 'Login' %}" class="text-blue-600 hover:text-blue-800">Login</a>
+                        <a href="{% url 'user-register' %}" class="text-blue-600 hover:text-blue-800">Register</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="pt-20 pb-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="mb-8">
+                <h1 class="text-3xl font-bold text-gray-900">Available Rides</h1>
+                <p class="mt-2 text-gray-600">Find and book your next journey with us</p>
+            </div>
+
+            <!-- Search Filters -->
+            <div class="bg-white p-6 rounded-lg shadow-sm mb-8">
+                <form method="GET" action="{% url 'booking' %}" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label for="from" class="block text-sm font-medium text-gray-700">From</label>
+                        <select name="from" id="from" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">Select departure city</option>
+                            {% for route in all_routes %}
+                                <option value="{{ route.start_location }}" {% if from_location == route.start_location %}selected{% endif %}>{{ route.start_location }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="to" class="block text-sm font-medium text-gray-700">To</label>
+                        <select name="to" id="to" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">Select arrival city</option>
+                            {% for route in all_routes %}
+                                <option value="{{ route.end_location }}" {% if to_location == route.end_location %}selected{% endif %}>{{ route.end_location }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="date" class="block text-sm font-medium text-gray-700">Date</label>
+                        <input type="date" name="date" id="date" value="{{ date }}" min="{% now 'Y-m-d' %}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div class="flex items-end">
+                        <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            Search
+                        </button>
+                    </div>
+                </form>
+                <div class="mt-4 p-3 bg-blue-50 rounded-md">
+                    <p class="text-sm text-blue-700">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        <strong>Price Updates:</strong> All prices are automatically updated from our admin system. Route prices shown are current and up-to-date.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Available Rides -->
+            <div class="grid grid-cols-1 gap-6">
+                {% for schedule in schedules %}
+                <div class="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300">
+                    <div class="p-6">
+                        <div class="flex flex-col md:flex-row justify-between">
+                            <div class="mb-4 md:mb-0">
+                                <div class="flex items-center mb-2">
+                                    <h3 class="text-xl font-semibold text-gray-900">{{ schedule.bus.bus_number }}</h3>
+                                    <span class="ml-2 px-2 py-1 text-xs font-medium rounded-full 
+                                        {% if schedule.bus.bus_type == 'Luxury' %}bg-purple-100 text-purple-800
+                                        {% elif schedule.bus.bus_type == 'Express' %}bg-green-100 text-green-800
+                                        {% else %}bg-blue-100 text-blue-800{% endif %}">
+                                        {{ schedule.bus.bus_type }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center text-gray-600 mb-2">
+                                    <i class="fas fa-map-marker-alt text-red-500 mr-2"></i>
+                                    <span>{{ schedule.route.start_location }} → {{ schedule.route.end_location }}</span>
+                                </div>
+                                <div class="flex items-center text-sm text-gray-500">
+                                    <i class="fas fa-clock text-blue-500 mr-2"></i>
+                                    <span>Departure: {{ schedule.departure_time|date:"g:i A" }}</span>
+                                    <span class="mx-2">|</span>
+                                    <span>Arrival: {{ schedule.arrival_time|date:"g:i A" }}</span>
+                                </div>
+                                <div class="mt-2 flex items-center text-sm text-gray-500">
+                                    <i class="fas fa-road text-gray-400 mr-2"></i>
+                                    <span>{{ schedule.route.distance }} km</span>
+                                    <span class="mx-2">|</span>
+                                    <i class="fas fa-hourglass-half text-gray-400 mr-2"></i>
+                                    <span>{{ schedule.route.duration }} hours</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end">
+                                <div class="text-2xl font-bold text-blue-600 mb-2">{{ schedule.price }} FCFA</div>
+                                <button class="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-300" 
+                                        onclick="showSeatMap({{ schedule.id }})">
+                                    Select Seats
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="bg-white p-6 rounded-lg shadow-sm text-center">
+                    <div class="text-gray-400 mb-4">
+                        <i class="fas fa-search fa-3x"></i>
+                    </div>
+                    <p class="text-gray-600 text-lg">No rides available for the selected criteria.</p>
+                    <p class="text-gray-500 mt-2">Try adjusting your search filters or check back later.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+
+    <!-- Seat Selection Modal -->
+    <div id="seatModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-900">Select Your Seat</h3>
+                <button onclick="closeSeatModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="seat-map-container mb-6">
+                <div class="driver-area">
+                    <i class="fas fa-steering-wheel mr-2"></i> Driver
+                </div>
+                <div id="seatMap" class="w-full">
+                    <!-- Seats will be dynamically loaded here -->
+                </div>
+            </div>
+            
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="flex space-x-4 mb-4 md:mb-0">
+                    <div class="flex items-center">
+                        <div class="seat available mr-2"></div>
+                        <span>Available</span>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="seat booked mr-2"></div>
+                        <span>Booked</span>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="seat selected mr-2"></div>
+                        <span>Selected</span>
+                    </div>
+                </div>
+                <div class="flex flex-col items-end">
+                    <div class="mb-2">
+                        <span class="font-semibold">Selected Seats: </span>
+                        <span id="selectedSeatsCount">0</span>
+                    </div>
+                    <button id="confirmBooking" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                        Confirm Booking
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedSeats = [];
+        let currentScheduleId = null;
+
+        function showSeatMap(scheduleId) {
+            currentScheduleId = scheduleId;
+            document.getElementById('seatModal').classList.remove('hidden');
+            selectedSeats = [];
+            document.getElementById('selectedSeatsCount').textContent = '0';
+            
+            // Fetch seat data for this schedule
+            fetch(`/get-seats/${scheduleId}/`)
+                .then(response => response.json())
+                .then(data => {
+                    const seatMap = document.getElementById('seatMap');
+                    seatMap.innerHTML = '';
+                    
+                    // Create a more realistic bus layout with rows and columns
+                    const rows = Math.ceil(data.seats.length / 4);
+                    
+                    for (let row = 0; row < rows; row++) {
+                        const seatRow = document.createElement('div');
+                        seatRow.className = 'seat-row';
+                        
+                        for (let col = 0; col < 4; col++) {
+                            const seatIndex = row * 4 + col;
+                            if (seatIndex < data.seats.length) {
+                                const seat = data.seats[seatIndex];
+                                const seatDiv = document.createElement('div');
+                                seatDiv.className = `seat ${seat.is_booked ? 'booked' : 'available'}`;
+                                seatDiv.textContent = seat.seat_number;
+                                seatDiv.dataset.seatId = seat.id;
+                                
+                                if (!seat.is_booked) {
+                                    seatDiv.addEventListener('click', () => toggleSeatSelection(seatDiv));
+                                }
+                                
+                                seatRow.appendChild(seatDiv);
+                            }
+                        }
+                        
+                        seatMap.appendChild(seatRow);
+                    }
+                });
+        }
+
+        function closeSeatModal() {
+            document.getElementById('seatModal').classList.add('hidden');
+            selectedSeats = [];
+            document.getElementById('selectedSeatsCount').textContent = '0';
+        }
+
+        function toggleSeatSelection(seatElement) {
+            const seatId = parseInt(seatElement.dataset.seatId);
+            const index = selectedSeats.indexOf(seatId);
+            
+            if (index === -1) {
+                // Add seat to selection
+                selectedSeats.push(seatId);
+                seatElement.classList.remove('available');
+                seatElement.classList.add('selected');
+            } else {
+                // Remove seat from selection
+                selectedSeats.splice(index, 1);
+                seatElement.classList.remove('selected');
+                seatElement.classList.add('available');
+            }
+            
+            document.getElementById('selectedSeatsCount').textContent = selectedSeats.length;
+        }
+
+        document.getElementById('confirmBooking').addEventListener('click', function() {
+            if (selectedSeats.length === 0) {
+                alert('Please select at least one seat.');
+                return;
+            }
+            
+            if (!currentScheduleId) {
+                alert('No schedule selected.');
+                return;
+            }
+            
+            // Send booking request
+            fetch('/book-seats/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    schedule_id: currentScheduleId,
+                    seat_ids: selectedSeats
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Redirect to payment page
+                    window.location.href = `/payment/${data.booking_group_id}/`;
+                } else {
+                    alert(data.message || 'Booking failed. Please try again.');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            });
+        });
+
+        // Helper function to get CSRF token
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+    </script>
+</body>
+</html> 
