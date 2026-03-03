@@ -10598,3 +10598,217 @@ C:\Users\MP\Desktop\moghamo\Nelsaproject\Nelsaproject\settings.py changed, reloa
 Watching for file changes with StatReloader
 C:\Users\MP\Desktop\moghamo\Nelsaproject\NelsaApp\models.py changed, reloading.
 Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14076
+"GET /static/image.png HTTP/1.1" 200 1237480
+"GET /static/img1.jpg HTTP/1.1" 200 52536
+"GET /static/img2.jpg HTTP/1.1" 200 62602
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 8483
+"GET /Login/ HTTP/1.1" 200 2533
+"POST /Login/ HTTP/1.1" 302 0
+"GET /admin-dashboard/ HTTP/1.1" 200 14698
+"GET /logout/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 14076
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+"GET /register/ HTTP/1.1" 200 12168
+"GET / HTTP/1.1" 200 14076
+"GET /register/ HTTP/1.1" 200 11903
+"GET /Login/ HTTP/1.1" 200 2533
+"POST /Login/ HTTP/1.1" 302 0
+"GET /admin-dashboard/ HTTP/1.1" 200 14698
+"GET /admin-bookings/ HTTP/1.1" 200 51207
+"GET /admin-bookings/8/ HTTP/1.1" 200 16632
+"GET /admin-bookings/8/cancel/ HTTP/1.1" 302 0
+"GET /admin-bookings/ HTTP/1.1" 200 50508
+"GET /booking/ HTTP/1.1" 200 68176
+"GET /get-seats/425/ HTTP/1.1" 200 3563
+"POST /book-seats/ HTTP/1.1" 200 74
+"GET /payment/12/ HTTP/1.1" 200 16410
+"GET /process-payment/MOMO/12/ HTTP/1.1" 200 17494
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14076
+"GET /static/image.png HTTP/1.1" 200 1237480
+"GET /static/img1.jpg HTTP/1.1" 200 52536
+"GET /static/img2.jpg HTTP/1.1" 200 62602
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 8483
+"GET /about_view/ HTTP/1.1" 200 12209
+Not Found: /static/images/img.jpeg
+"GET /static/images/img.jpeg HTTP/1.1" 404 8483
+Not Found: /static/images/img1.jpg
+"GET /static/images/img1.jpg HTTP/1.1" 404 8483
+"GET /services/ HTTP/1.1" 200 16238
+Not Found: /static/img3.png
+"GET /static/img3.png HTTP/1.1" 404 8483
+"GET /services/ HTTP/1.1" 200 16238
+"GET /static/img2.jpg HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/image.png HTTP/1.1" 304 0
+Not Found: /static/img3.png
+"GET /static/img3.png HTTP/1.1" 404 8483
+"GET /routes/ HTTP/1.1" 200 24201
+"GET /contact/ HTTP/1.1" 200 15620
+"GET /contact/ HTTP/1.1" 200 15620
+"GET /static/img2.jpg HTTP/1.1" 304 0
+"GET /contact/ HTTP/1.1" 200 15620
+"GET /Login/ HTTP/1.1" 200 2533
+"POST /Login/ HTTP/1.1" 302 0
+"GET /admin-dashboard/ HTTP/1.1" 200 14698
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14075
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 8481
+"GET /contact/ HTTP/1.1" 200 15636
+"GET /about_view/ HTTP/1.1" 200 12207
+Not Found: /static/images/img.jpeg
+"GET /static/images/img.jpeg HTTP/1.1" 404 8481
+Not Found: /static/images/img1.jpg
+"GET /static/images/img1.jpg HTTP/1.1" 404 8481
+"GET /contact/ HTTP/1.1" 200 15636
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14075
+"GET /static/image.png HTTP/1.1" 200 1237480
+"GET /static/img1.jpg HTTP/1.1" 200 52536
+"GET /static/img2.jpg HTTP/1.1" 200 62602
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 8481
+"GET /Login/ HTTP/1.1" 200 2533
+"POST /Login/ HTTP/1.1" 302 0
+"GET / HTTP/1.1" 200 14127
+"GET /profile/ HTTP/1.1" 200 62209
+Not Found: /.well-known/appspecific/com.chrome.devtools.json
+"GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 8533
+"GET / HTTP/1.1" 200 14127
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+"GET /booking/ HTTP/1.1" 200 54810
+"GET /booking/?from=Douala&to=Bamenda&date=2026-01-09 HTTP/1.1" 200 94948
+"GET /get-seats/468/ HTTP/1.1" 200 3563
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14075
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+"GET /about_view/ HTTP/1.1" 200 12207
+Not Found: /static/images/img.jpeg
+"GET /static/images/img.jpeg HTTP/1.1" 404 8481
+Not Found: /static/images/img1.jpg
+"GET /static/images/img1.jpg HTTP/1.1" 404 8481
+"GET /services/ HTTP/1.1" 200 16236
+Not Found: /static/img3.png
+"GET /static/img3.png HTTP/1.1" 404 8481
+"GET /routes/ HTTP/1.1" 200 24199
+"GET /booking/ HTTP/1.1" 200 65206
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14075
+"GET /static/image.png HTTP/1.1" 200 1237480
+"GET /static/img1.jpg HTTP/1.1" 200 52536
+"GET /static/img2.jpg HTTP/1.1" 200 62602
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 8481
+"GET /about_view/ HTTP/1.1" 200 12207
+Not Found: /static/images/img.jpeg
+"GET /static/images/img.jpeg HTTP/1.1" 404 8481
+Not Found: /static/images/img1.jpg
+"GET /static/images/img1.jpg HTTP/1.1" 404 8481
+"GET /about_view/ HTTP/1.1" 200 12207
+Not Found: /static/images/img.jpeg
+"GET /static/images/img.jpeg HTTP/1.1" 404 8481
+Not Found: /static/images/img1.jpg
+"GET /static/images/img1.jpg HTTP/1.1" 404 8481
+"GET /services/ HTTP/1.1" 200 16236
+Not Found: /static/img3.png
+"GET /static/img3.png HTTP/1.1" 404 8481
+- Broken pipe from ('127.0.0.1', 58140)
+"GET /routes/ HTTP/1.1" 200 24199
+"GET /contact/ HTTP/1.1" 200 15636
+"GET /booking/ HTTP/1.1" 200 62693
+"GET /Login/ HTTP/1.1" 200 2533
+"POST /Login/ HTTP/1.1" 302 0
+"GET /admin-dashboard/ HTTP/1.1" 200 14696
+"GET /admin-bookings/ HTTP/1.1" 200 54453
+"GET /admin-dashboard/ HTTP/1.1" 200 14696
+"GET /admin-support/ HTTP/1.1" 200 28110
+"GET / HTTP/1.1" 200 14514
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+Watching for file changes with StatReloader
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14075
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 8481
+"GET /Login/ HTTP/1.1" 200 2533
+"GET /Login/ HTTP/1.1" 200 2533
+"POST /Login/ HTTP/1.1" 302 0
+"GET /admin-dashboard/ HTTP/1.1" 200 14696
+"GET /booking/ HTTP/1.1" 200 62712
+"GET /booking/?from=Bamenda&to=Douala&date=2026-02-26 HTTP/1.1" 200 102966
+"GET /get-seats/515/ HTTP/1.1" 200 1523
+"POST /book-seats/ HTTP/1.1" 200 74
+"GET /payment/13/ HTTP/1.1" 200 16406
+"GET /process-payment/MOMO/13/ HTTP/1.1" 200 17497
+"POST /verify-payment/ HTTP/1.1" 200 61
+"GET /booking-success/ HTTP/1.1" 200 14029
+"GET /profile/ HTTP/1.1" 200 62592
+"GET /admin-dashboard/ HTTP/1.1" 200 14696
+"GET /admin-bookings/ HTTP/1.1" 200 58129
+"GET /admin-bookings/12/cancel/ HTTP/1.1" 302 0
+"GET /admin-bookings/ HTTP/1.1" 200 57428
+"GET / HTTP/1.1" 200 14514
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+"GET /contact/ HTTP/1.1" 200 16075
+"GET /about_view/ HTTP/1.1" 200 12646
+Not Found: /static/images/img.jpeg
+"GET /static/images/img.jpeg HTTP/1.1" 404 8920
+Not Found: /static/images/img1.jpg
+"GET /static/images/img1.jpg HTTP/1.1" 404 8920
+"GET /services/ HTTP/1.1" 200 16675
+Not Found: /static/img3.png
+"GET /static/img3.png HTTP/1.1" 404 8920
+"GET /admin-dashboard/ HTTP/1.1" 200 14696
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14514
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 8920
+"GET /about_view/ HTTP/1.1" 200 12646
+Not Found: /static/images/img.jpeg
+"GET /static/images/img.jpeg HTTP/1.1" 404 8920
+Not Found: /static/images/img1.jpg
+"GET /static/images/img1.jpg HTTP/1.1" 404 8920
+"GET /services/ HTTP/1.1" 200 16675
+Not Found: /static/img3.png
+"GET /static/img3.png HTTP/1.1" 404 8920
+"GET /contact/ HTTP/1.1" 200 16075
+"GET / HTTP/1.1" 200 14514
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+"GET / HTTP/1.1" 200 14514
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+"GET /contact/ HTTP/1.1" 200 16064
+Watching for file changes with StatReloader
+"GET / HTTP/1.1" 200 14514
+"GET /static/image.png HTTP/1.1" 304 0
+"GET /static/img1.jpg HTTP/1.1" 304 0
+"GET /static/img2.jpg HTTP/1.1" 304 0
+Not Found: /favicon.ico
+"GET /favicon.ico HTTP/1.1" 404 8920
