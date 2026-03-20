@@ -105,7 +105,7 @@ def Login_view(request):
                 messages.error(request, "Invalid username or password.")
     else:
         form = LoginForm()
-    return render(request, 'NelsaApp/Login.html', {'form':form})
+    return render(request, 'NelsaApp/login.html', {'form':form})
 
 def logout_view(request):
     logout(request)
@@ -120,7 +120,7 @@ def book_view(request):
             return redirect('booking_success')  # Redirect to a success page
     else:
         form = BookingForm()
-    return render(request, 'NelsaApp/Booking.html', {'form':form})
+    return render(request, 'NelsaApp/booking.html', {'form':form})
 
 # New booking page view
 def booking_page(request):
