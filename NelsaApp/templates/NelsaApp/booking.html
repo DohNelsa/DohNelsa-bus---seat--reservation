@@ -251,7 +251,12 @@
             
             // Fetch seat data for this schedule
             fetch(`/get-seats/${scheduleId}/`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to load seat map.');
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     const seatMap = document.getElementById('seatMap');
                     seatMap.innerHTML = '';
@@ -282,6 +287,11 @@
                         
                         seatMap.appendChild(seatRow);
                     }
+                })
+                .catch(error => {
+                    console.error('Error loading seats:', error);
+                    const seatMap = document.getElementById('seatMap');
+                    seatMap.innerHTML = '<p class="text-red-600 text-center">Unable to load seats right now. Please refresh and try again.</p>';
                 });
         }
 

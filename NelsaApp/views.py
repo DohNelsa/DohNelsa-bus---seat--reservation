@@ -333,7 +333,6 @@ def admin_view(request):
 
 # New views for booking functionality
 
-@login_required
 def get_seats(request, schedule_id):
     """API endpoint to get seats for a specific schedule."""
     schedule = get_object_or_404(Schedule, id=schedule_id)
