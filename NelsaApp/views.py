@@ -337,19 +337,33 @@ def get_seats(request, schedule_id):
     """API endpoint to get seats for a specific schedule."""
     schedule = get_object_or_404(Schedule, id=schedule_id)
     bus = schedule.bus
-    
-    # Get all seats for this bus
+
     seats = []
-    for i in range(1, bus.capacity + 1):
-        # Check if this seat is already booked for this schedule
-        is_booked = Booking.objects.filter(schedule=schedule, seat_number=i).exists()
-        
-        seats.append({
-            'id': i,
-            'seat_number': i,
-            'is_booked': is_booked
-        })
-    
+
+    # Prefer explicit Seat records when they exist for the bus.
+    # Fall back to bus capacity for legacy data.
+    bus_seats = Seat.objects.filter(bus=bus).order_by('row', 'column')
+    if bus_seats.exists():
+        for idx, _seat in enumerate(bus_seats, start=1):
+            is_booked = Booking.objects.filter(schedule=schedule, seat_number=idx).exists()
+            seats.append({
+                'id': idx,
+                'seat_number': idx,
+                'is_booked': is_booked
+            })
+    else:
+        capacity = bus.capacity or 0
+        if capacity <= 0:
+            capacity = 40
+
+        for i in range(1, capacity + 1):
+            is_booked = Booking.objects.filter(schedule=schedule, seat_number=i).exists()
+            seats.append({
+                'id': i,
+                'seat_number': i,
+                'is_booked': is_booked
+            })
+
     return JsonResponse({'seats': seats})
 
 @login_required
