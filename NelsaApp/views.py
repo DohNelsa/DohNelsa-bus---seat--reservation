@@ -14,6 +14,7 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.db.models import Sum
+from django.db import transaction
 from django.core.paginator import Paginator
 from django.utils import timezone
 import json
@@ -381,6 +382,15 @@ def book_seats_api(request):
         
         if not schedule_id or not seat_ids:
             return JsonResponse({'success': False, 'message': 'Missing required data'})
+
+        # Normalize seat ids to unique positive integers
+        try:
+            seat_ids = sorted({int(seat_id) for seat_id in seat_ids if int(seat_id) > 0})
+        except (TypeError, ValueError):
+            return JsonResponse({'success': False, 'message': 'Invalid seat selection'})
+
+        if not seat_ids:
+            return JsonResponse({'success': False, 'message': 'No valid seats selected'})
         
         schedule = get_object_or_404(Schedule, id=schedule_id)
         
@@ -395,11 +405,13 @@ def book_seats_api(request):
             # If no full name, create a unique display name using username and user ID
             user_display_name = f"{request.user.username} (ID: {request.user.id})"
         
+        passenger_email = (request.user.email or f"user-{request.user.id}@example.com").strip().lower()
         passenger, created = Passenger.objects.get_or_create(
-            email=request.user.email,
+            email=passenger_email,
             defaults={
                 'name': user_display_name,
-                'phone': 'N/A'  # You might want to collect this during registration
+                # Passenger.phone is unique; use a deterministic unique fallback
+                'phone': f"U{request.user.id:010d}"
             }
         )
         
@@ -410,33 +422,53 @@ def book_seats_api(request):
             passenger.name = f"{request.user.username} (ID: {request.user.id})"
             passenger.save()
         
-        # Check if any seat is already booked
-        for seat_id in seat_ids:
-            if Booking.objects.filter(schedule=schedule, seat_number=seat_id).exists():
-                return JsonResponse({'success': False, 'message': f'Seat {seat_id} is already booked'})
-        
-        # Calculate total amount
-        total_amount = schedule.price * len(seat_ids)
-        
-        # Create BookingGroup
-        booking_group = BookingGroup.objects.create(
-            passenger=passenger,
-            schedule=schedule,
-            total_amount=total_amount,
-            status='Pending'
-        )
-        
-        # Create bookings for each seat and link to group
-        bookings = []
-        for seat_id in seat_ids:
-            booking = Booking.objects.create(
+        # Ensure selected seat numbers are within available range for this bus
+        bus_seats = Seat.objects.filter(bus=schedule.bus)
+        max_seat_number = bus_seats.count() if bus_seats.exists() else (schedule.bus.capacity or 0)
+        if max_seat_number <= 0:
+            max_seat_number = 40
+
+        invalid_seats = [seat_id for seat_id in seat_ids if seat_id > max_seat_number]
+        if invalid_seats:
+            return JsonResponse({
+                'success': False,
+                'message': f"Invalid seat number(s): {', '.join(map(str, invalid_seats))}"
+            })
+
+        with transaction.atomic():
+            # Lock matching rows and ensure seats are still available
+            existing_bookings = Booking.objects.select_for_update().filter(
+                schedule=schedule,
+                seat_number__in=seat_ids
+            ).values_list('seat_number', flat=True)
+
+            already_booked = sorted(existing_bookings)
+            if already_booked:
+                return JsonResponse({
+                    'success': False,
+                    'message': f"Seat(s) already booked: {', '.join(map(str, already_booked))}"
+                })
+
+            # Calculate total amount
+            total_amount = schedule.price * len(seat_ids)
+
+            # Create BookingGroup
+            booking_group = BookingGroup.objects.create(
                 passenger=passenger,
                 schedule=schedule,
-                seat_number=seat_id,
-                status='Pending',
-                booking_group=booking_group
+                total_amount=total_amount,
+                status='Pending'
             )
-            bookings.append(booking)
+
+            # Create bookings for each seat and link to group
+            for seat_id in seat_ids:
+                Booking.objects.create(
+                    passenger=passenger,
+                    schedule=schedule,
+                    seat_number=seat_id,
+                    status='Pending',
+                    booking_group=booking_group
+                )
         
         # Return success with the booking group ID to redirect to payment
         return JsonResponse({

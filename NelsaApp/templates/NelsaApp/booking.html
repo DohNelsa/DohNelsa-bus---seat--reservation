@@ -343,7 +343,13 @@
                     seat_ids: selectedSeats
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (response.redirected || response.url.includes('/Login/')) {
+                    window.location.href = `/Login/?next=${encodeURIComponent('/booking/')}`;
+                    throw new Error('Redirecting to login');
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
                     // Redirect to payment page
