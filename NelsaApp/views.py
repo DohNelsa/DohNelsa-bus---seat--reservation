@@ -2031,3 +2031,8 @@ def google_verification(request):
     )
     return FileResponse(open(file_path, 'rb'))
 
+
+def sitemap_xml(request):
+    file_path = os.path.join(settings.BASE_DIR, 'static', 'sitemap.xml')
+    return FileResponse(open(file_path, 'rb'), content_type='application/xml')
+

@@ -2,6 +2,7 @@ from django.urls import path
 from NelsaApp import views
 
 urlpatterns = [
+    path('sitemap.xml', views.sitemap_xml, name='sitemap_xml'),
     path('googlea0b32e245a16c475.html', views.google_verification, name='google_verification'),
     path('', views.index, name = 'index'),
     path('register/', views.register, name = 'user-register'),
