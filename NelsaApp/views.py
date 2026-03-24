@@ -22,6 +22,8 @@ import random
 from django.db.models import Q
 from django.core.mail import send_mail
 from django.conf import settings
+from django.http import FileResponse
+import os
 
 # SMS functionality disabled
 # from .sms_service import send_booking_confirmation_sms, send_booking_cancellation_sms
@@ -2021,4 +2023,11 @@ def send_email(request):
         status_message = "Email sent successfully!"
     except Exception as e:
         status_message = f"Failed to send email: {e}"
+
+
+def google_verification(request):
+    file_path = os.path.join(
+        settings.BASE_DIR, 'static', 'googlea0b32e245a16c475.html'
+    )
+    return FileResponse(open(file_path, 'rb'))
 
