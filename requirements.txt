@@ -4,3 +4,4 @@ whitenoise==6.11.0
 twilio
 qrcode[pil]>=7.4
 Pillow>=10.0
+psycopg[binary]>=3.2

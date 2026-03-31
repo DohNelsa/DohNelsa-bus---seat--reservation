@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 from django.core.exceptions import ImproperlyConfigured
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -87,13 +88,37 @@ WSGI_APPLICATION = 'Nelsaproject.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
+def _database_from_env():
+    """
+    Supports DATABASE_URL for PostgreSQL in production.
+    Falls back to local sqlite for development convenience.
+    """
+    db_url = (os.environ.get("DATABASE_URL", "") or "").strip()
+    if not db_url:
+        return {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    parsed = urlparse(db_url)
+    if parsed.scheme not in ("postgres", "postgresql"):
+        raise ImproperlyConfigured("Only postgres/postgresql DATABASE_URL is supported in production.")
+
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": (parsed.path or "").lstrip("/"),
+        "USER": parsed.username or "",
+        "PASSWORD": parsed.password or "",
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or ""),
+        "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
+        "OPTIONS": {"sslmode": os.environ.get("DB_SSLMODE", "prefer")},
     }
-}
+
+
+DATABASES = {"default": _database_from_env()}
+if DEPLOYMENT_ENV in ("production", "staging") and DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
+    raise ImproperlyConfigured("SQLite is not supported in production/staging. Set DATABASE_URL to PostgreSQL.")
 
 
 # Password validation
@@ -190,6 +215,18 @@ ALERT_ON_WEBHOOK_FAILURE = os.environ.get('ALERT_ON_WEBHOOK_FAILURE', 'False').l
 
 # Internal JSON metrics (token in X-Metrics-Token or ?token=); if unset, staff with webhook perm may access
 METRICS_AUTH_TOKEN = os.environ.get('METRICS_AUTH_TOKEN', '')
+
+# Alert policy thresholds (ops command uses these values)
+ALERT_WEBHOOK_REJECTED_THRESHOLD_5M = int(os.environ.get('ALERT_WEBHOOK_REJECTED_THRESHOLD_5M', '3'))
+ALERT_WEBHOOK_DEAD_LETTER_THRESHOLD = int(os.environ.get('ALERT_WEBHOOK_DEAD_LETTER_THRESHOLD', '1'))
+ALERT_SMS_FAILED_THRESHOLD = int(os.environ.get('ALERT_SMS_FAILED_THRESHOLD', '20'))
+ALERT_PENDING_BOOKINGS_THRESHOLD = int(os.environ.get('ALERT_PENDING_BOOKINGS_THRESHOLD', '100'))
+ALERT_ESCALATION_RECIPIENTS = [
+    e.strip()
+    for e in os.environ.get('ALERT_ESCALATION_RECIPIENTS', '').split(',')
+    if e.strip()
+]
+ONCALL_OWNER = os.environ.get('ONCALL_OWNER', 'ops-team')
 
 # Signed QR ticket tokens (optional separate secret; defaults to SECRET_KEY if unset)
 TICKET_SIGNING_SECRET = os.environ.get('TICKET_SIGNING_SECRET', '')

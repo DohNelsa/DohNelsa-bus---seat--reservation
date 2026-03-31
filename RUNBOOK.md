@@ -1,38 +1,105 @@
 # Operations runbook (Nelsa / MOGHAMO EXPRESS)
 
-## Health checks
+## 1) Production data-layer baseline
 
-- **Liveness:** `GET /health/` — process is up.
-- **Readiness:** `GET /health/ready/` — returns `503` if the database is unreachable (use for orchestrator / Render health checks).
-- **Metrics (JSON):** `GET /internal/metrics/`  
-  - Authenticated staff with **View payment webhook events**, **or**  
-  - `X-Metrics-Token` / `?token=` matching `METRICS_AUTH_TOKEN` (for cron / external monitors).
+- **Mandatory for production/staging:** PostgreSQL via `DATABASE_URL`.
+- **Guardrail in code:** app startup fails in production/staging if DB is still SQLite.
+- **Recommended deployment vars:** `DB_CONN_MAX_AGE=60`, `DB_SSLMODE=require` (or provider default).
+- **Dependency:** `psycopg[binary]` is included in requirements.
 
-## Payment webhooks
+## 2) Health, metrics, and dashboard inputs
 
-- **URL:** `POST /webhooks/payment/`
-- **Headers:**  
-  - `X-Payment-Webhook-Secret` — must match `PAYMENT_WEBHOOK_SECRET`.  
-  - Optional `X-Webhook-Body-Signature` — hex SHA-256 HMAC of the raw body using `PAYMENT_WEBHOOK_HMAC_SECRET` (constant-time compare).
-- **Payment success payload (conceptually):** `event_id`, `booking_group_id`, `payment_method` (MOMO/ORANGE/CARD), `transaction_id`, `status` in (`COMPLETED`,`SUCCESS`), `amount` equal to `BookingGroup.total_amount`.
-- **Refund payload:** `event_id`, `booking_group_id`, `event_kind` = `refund` (or `status` in `REFUNDED` / `REFUND` / `REFUND_COMPLETED`). Marks `Payment` as `REFUNDED`, cancels seats, sets refund status to completed.
-- **Idempotency:** same `event_id` is stored in `PaymentWebhookEvent` and ignored once processed.
-- **Alerts:** set `ALERT_ON_WEBHOOK_FAILURE=True` and `ALERT_EMAIL_RECIPIENTS` to receive mail when a webhook is **rejected** (validation error).
+- **Liveness:** `GET /health/`
+- **Readiness:** `GET /health/ready/`
+- **Metrics JSON:** `GET /internal/metrics/`
+  - Access by `X-Metrics-Token` / `?token=` (`METRICS_AUTH_TOKEN`) or staff with webhook permission.
+  - Includes:
+    - webhook status counts (24h)
+    - dead-letter webhook count
+    - SMS failed total
+    - notification queue backlog
+    - pending booking groups
 
-## RBAC (groups & permissions)
+## 3) Alert policy and escalation
 
-- Migration `0019_rbac_default_groups` creates **Operations Full** (all custom permissions) and **Finance** (bookings dashboard + webhooks + audit + refunds) and adds **all existing staff users** to **Operations Full**.
-- New staff users: assign groups in **Django admin → Users → Groups**, or they will get “permission denied” on app routes even if `is_staff` is true.
-- Custom permissions live on **BookingGroup** (confirm, cancel, webhooks, SMS, routes, refunds, etc.).
+### Threshold variables
 
-## Refund & rebooking
+- `ALERT_WEBHOOK_REJECTED_THRESHOLD_5M` (default `3`)
+- `ALERT_WEBHOOK_DEAD_LETTER_THRESHOLD` (default `1`)
+- `ALERT_SMS_FAILED_THRESHOLD` (default `20`)
+- `ALERT_PENDING_BOOKINGS_THRESHOLD` (default `100`)
 
-- **Refund (manual):** Booking detail → **Request refund** → after the provider returns money → **Mark refund complete** (cancels seats, `Payment` → `REFUNDED`).
-- **Rebook:** Booking detail → **Rebook** → pick a new schedule and the same number of seats; old group is cancelled, a new pending group is created with `payment_waived` and a zero-amount reconciling payment; **Confirm** the new group in the normal way.
+### Ownership / escalation variables
 
-## Monitoring checklist
+- `ONCALL_OWNER` (default `ops-team`)
+- `ALERT_EMAIL_RECIPIENTS` (primary)
+- `ALERT_ESCALATION_RECIPIENTS` (secondary)
 
-1. Watch `/health/ready/` from your host.
-2. Poll `/internal/metrics/` (with token) for webhook `rejected` / `failed` counts and pending booking groups.
-3. Review **Payment Webhook Events** and **Admin audit log** in the staff UI.
-4. Watch `logs/django.log` for `nelsa.ops` and `nelsa.audit` when email is not configured.
+### Command to evaluate policy
+
+- `python manage.py check_ops_alerts`
+  - Sends alert email when any threshold is breached.
+  - Intended schedule: every 5 minutes.
+
+## 4) Incident tooling
+
+### Safe webhook replay / dead-letter handling
+
+- **Auto retry path:** webhook failures increment retry count and dead-letter when max retries reached.
+- **Manual admin retry button:** in webhook detail page for non-dead-lettered events.
+- **Bulk CLI retry:**  
+  - `python manage.py retry_failed_webhooks --limit 100`
+
+### Audit export
+
+- `python manage.py export_audit_log --output ./exports/audit-$(date +%Y%m%d).csv --limit 10000`
+
+### Refund reconciliation report
+
+- `python manage.py refund_reconciliation_report --output ./exports/refund-recon-$(date +%Y%m%d).csv`
+
+## 5) Async side effects queue
+
+- Booking confirm now queues jobs instead of sending inline.
+- Worker command:
+  - `python manage.py process_notification_jobs --limit 100`
+- Schedule this command every minute in production.
+
+## 6) Backup and restore operations
+
+### Backup
+
+- `python manage.py backup_database --output-dir ./backups`
+- Produces timestamped folder with:
+  - `dumpdata.json` (portable logical backup)
+  - sqlite file copy (when engine is sqlite)
+
+### Restore
+
+- `python manage.py restore_database --input ./backups/<timestamp>/dumpdata.json --flush --yes-i-know`
+
+### Restore drill cadence
+
+- **Weekly:** run backup command and verify artifact integrity.
+- **Monthly drill (required):**
+  1. Restore latest backup into a non-production environment.
+  2. Run `python manage.py check`.
+  3. Verify:
+     - can log in as admin
+     - webhook dashboard loads
+     - audit export works
+     - refund reconciliation report generates
+  4. Record drill date, operator, duration, and issues.
+
+## 7) On-call run checklist
+
+1. Confirm `/health/ready/`.
+2. Fetch `/internal/metrics/`.
+3. Run `python manage.py check_ops_alerts`.
+4. If webhooks failing:
+   - inspect admin webhook events
+   - run `retry_failed_webhooks`
+   - escalate if dead-letter count remains above threshold.
+5. If queue backlog high:
+   - run `process_notification_jobs`
+   - verify provider credentials and outbound network.

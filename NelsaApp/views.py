@@ -1072,6 +1072,8 @@ def internal_metrics(request):
     since = timezone.now() - timedelta(hours=24)
     wq = PaymentWebhookEvent.objects.filter(received_at__gte=since)
     bg_failed = BookingGroup.objects.filter(sms_status="FAILED").count()
+    dead_lettered = PaymentWebhookEvent.objects.filter(dead_lettered=True, processed=False).count()
+    notif_backlog = NotificationJob.objects.filter(status__in=["PENDING", "FAILED"]).count()
     return JsonResponse(
         {
             "webhooks_last_24h": {
@@ -1080,7 +1082,9 @@ def internal_metrics(request):
                 "failed": wq.filter(status="FAILED").count(),
                 "pending": wq.filter(status="PENDING").count(),
             },
+            "webhooks_dead_lettered": dead_lettered,
             "sms_failed_total": bg_failed,
+            "notification_queue_backlog": notif_backlog,
             "pending_booking_groups": BookingGroup.objects.filter(status="Pending").count(),
             "timestamp": timezone.now().isoformat(),
         }
@@ -1089,9 +1093,8 @@ def internal_metrics(request):
 
 @login_required
 @require_perm("manage_refunds_rebooks")
+@require_POST
 def admin_request_refund(request, booking_group_id):
-    if request.method != "POST":
-        return redirect("admin_booking_detail", booking_group_id=booking_group_id)
     bg = get_object_or_404(BookingGroup, id=booking_group_id)
     if bg.refund_status != "NONE":
         messages.error(request, "Refund already requested or completed for this booking.")
@@ -1117,9 +1120,8 @@ def admin_request_refund(request, booking_group_id):
 
 @login_required
 @require_perm("manage_refunds_rebooks")
+@require_POST
 def admin_complete_refund(request, booking_group_id):
-    if request.method != "POST":
-        return redirect("admin_booking_detail", booking_group_id=booking_group_id)
     bg = get_object_or_404(BookingGroup, id=booking_group_id)
     if bg.refund_status != "REQUESTED":
         messages.error(request, "Refund must be in Requested state before completion.")
