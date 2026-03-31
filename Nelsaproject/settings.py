@@ -195,6 +195,11 @@ PAYMENT_WEBHOOK_SECRET = os.environ.get('PAYMENT_WEBHOOK_SECRET', '')
 PAYMENT_WEBHOOK_HMAC_SECRET = os.environ.get('PAYMENT_WEBHOOK_HMAC_SECRET', '')
 PAYMENT_WEBHOOK_MAX_SKEW_SECONDS = int(os.environ.get('PAYMENT_WEBHOOK_MAX_SKEW_SECONDS', '300'))
 PAYMENT_WEBHOOK_MAX_RETRIES = int(os.environ.get('PAYMENT_WEBHOOK_MAX_RETRIES', '3'))
+PAYMENT_WEBHOOK_TRUSTED_IPS = [
+    ip.strip()
+    for ip in os.environ.get('PAYMENT_WEBHOOK_TRUSTED_IPS', '').split(',')
+    if ip.strip()
+]
 
 # Provider-specific webhook signatures (optional, based on provider)
 PAYSTACK_WEBHOOK_SECRET = os.environ.get('PAYSTACK_WEBHOOK_SECRET', '')
@@ -215,6 +220,11 @@ ALERT_ON_WEBHOOK_FAILURE = os.environ.get('ALERT_ON_WEBHOOK_FAILURE', 'False').l
 
 # Internal JSON metrics (token in X-Metrics-Token or ?token=); if unset, staff with webhook perm may access
 METRICS_AUTH_TOKEN = os.environ.get('METRICS_AUTH_TOKEN', '')
+
+# Public endpoint throttling defaults (requests per minute)
+VERIFY_TICKET_RATE_LIMIT_PER_MIN = int(os.environ.get('VERIFY_TICKET_RATE_LIMIT_PER_MIN', '120'))
+VERIFY_SMS_RECEIPT_RATE_LIMIT_PER_MIN = int(os.environ.get('VERIFY_SMS_RECEIPT_RATE_LIMIT_PER_MIN', '60'))
+PAYMENT_WEBHOOK_RATE_LIMIT_PER_MIN = int(os.environ.get('PAYMENT_WEBHOOK_RATE_LIMIT_PER_MIN', '120'))
 
 # Alert policy thresholds (ops command uses these values)
 ALERT_WEBHOOK_REJECTED_THRESHOLD_5M = int(os.environ.get('ALERT_WEBHOOK_REJECTED_THRESHOLD_5M', '3'))

@@ -34,6 +34,9 @@ db.sqlite3-journal
 # Environment variables
 .env
 .env.local
+.env.*
+!.env.example
+*.env
 
 # IDE
 .vscode/
@@ -58,5 +61,14 @@ htmlcov/
 # Temporary files
 *.tmp
 *.bak
+
+# Local secrets / credentials
+credentials.json
+*credentials*.json
+secrets*.yml
+secrets*.yaml
+secrets*.json
+*.pem
+*.key
 
 

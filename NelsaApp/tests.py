@@ -6,7 +6,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Booking, BookingGroup, Bus, NotificationJob, Passenger, PaymentWebhookEvent, Route, Schedule
+from .models import AdminAuditLog, Booking, BookingGroup, Bus, NotificationJob, Passenger, Route, Schedule
 
 
 class HardeningTests(TestCase):
@@ -90,6 +90,7 @@ class HardeningTests(TestCase):
         self.client.login(username="staff1", password="pw12345")
         resp = self.client.get(reverse("admin_payment_webhooks"))
         self.assertNotEqual(resp.status_code, 200)
+        self.assertTrue(AdminAuditLog.objects.filter(action="access_denied").exists())
 
     def test_state_changing_admin_actions_are_post_only(self):
         self._grant(self.staff, "cancel_bookinggroup")
@@ -157,3 +158,21 @@ class HardeningTests(TestCase):
         self.assertEqual(new_group.status, "Pending")
         self.assertTrue(new_group.payment_waived)
         self.assertEqual(new_group.bookings.count(), 1)
+
+    @override_settings(VERIFY_SMS_RECEIPT_RATE_LIMIT_PER_MIN=2)
+    def test_verify_sms_receipt_rate_limited(self):
+        for _ in range(2):
+            r = self.client.get(reverse("verify_sms_receipt", kwargs={"code": "MOG-UNKNOWN"}))
+            self.assertIn(r.status_code, (404, 400))
+        r3 = self.client.get(reverse("verify_sms_receipt", kwargs={"code": "MOG-UNKNOWN"}))
+        self.assertEqual(r3.status_code, 429)
+
+    def test_user_role_change_is_audited(self):
+        target = User.objects.create_user(username="target", password="pw12345", email="target@example.com")
+        self._grant(self.staff, "manage_staff_users")
+        self.client.login(username="staff1", password="pw12345")
+        resp = self.client.post(reverse("admin_users"), data={"action": "make_staff", "user_id": str(target.id)})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(
+            AdminAuditLog.objects.filter(action="user_make_staff", target_type="User", target_id=str(target.id)).exists()
+        )

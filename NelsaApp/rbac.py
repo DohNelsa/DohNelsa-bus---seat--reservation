@@ -10,6 +10,7 @@ from functools import wraps
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.urls import reverse
+from .audit import log_admin_action
 
 
 def _full_perm(codename: str) -> str:
@@ -44,10 +45,24 @@ def require_perm(codename: str):
                 return view(request, *args, **kwargs)
             if not request.user.is_staff:
                 messages.error(request, "Staff access required.")
+                log_admin_action(
+                    request,
+                    "access_denied",
+                    "Permission",
+                    codename,
+                    {"reason": "not_staff"},
+                )
                 return redirect("index")
             if user_has_perm(request.user, codename):
                 return view(request, *args, **kwargs)
             messages.error(request, "You do not have permission to perform this action.")
+            log_admin_action(
+                request,
+                "access_denied",
+                "Permission",
+                codename,
+                {"reason": "missing_perm"},
+            )
             return redirect("index")
 
         return _wrapped
@@ -65,10 +80,24 @@ def require_any_perm(*codenames: str):
                 return view(request, *args, **kwargs)
             if not request.user.is_staff:
                 messages.error(request, "Staff access required.")
+                log_admin_action(
+                    request,
+                    "access_denied",
+                    "PermissionAny",
+                    ",".join(codenames),
+                    {"reason": "not_staff"},
+                )
                 return redirect("index")
             if user_has_any_perm(request.user, *codenames):
                 return view(request, *args, **kwargs)
             messages.error(request, "You do not have permission to perform this action.")
+            log_admin_action(
+                request,
+                "access_denied",
+                "PermissionAny",
+                ",".join(codenames),
+                {"reason": "missing_any_perm"},
+            )
             return redirect("index")
 
         return _wrapped

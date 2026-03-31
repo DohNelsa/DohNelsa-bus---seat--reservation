@@ -103,3 +103,29 @@
 5. If queue backlog high:
    - run `process_notification_jobs`
    - verify provider credentials and outbound network.
+
+## 8) Security/compliance guardrails
+
+### Secrets hygiene enforcement
+
+- Git ignore protects common local secret artifacts (`.env*`, credentials JSON, key/pem files).
+- Local commit scanner hook file is included at `.githooks/pre-commit`.
+- Enable hooks once per clone:
+  - `git config core.hooksPath .githooks`
+- Manual/CI scan command:
+  - `python manage.py scan_secrets --path .`
+
+### Public endpoint abuse controls
+
+- Rate limits (per IP, per minute):
+  - `VERIFY_TICKET_RATE_LIMIT_PER_MIN`
+  - `VERIFY_SMS_RECEIPT_RATE_LIMIT_PER_MIN`
+  - `PAYMENT_WEBHOOK_RATE_LIMIT_PER_MIN`
+- Optional webhook IP allowlist:
+  - `PAYMENT_WEBHOOK_TRUSTED_IPS` (comma-separated)
+
+### Expanded audit coverage
+
+- Permission denials are now logged as `access_denied`.
+- Sensitive user role/status actions are logged:
+  - `user_make_staff`, `user_remove_staff`, `user_activate`, `user_deactivate`.

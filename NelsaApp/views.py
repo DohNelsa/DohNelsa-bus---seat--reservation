@@ -54,8 +54,8 @@ from .audit import log_admin_action
 from .jobs import enqueue_notification_job
 from .monitoring import send_ops_alert
 from .rbac import require_admin_portal, require_perm, user_has_perm
+from .security import ip_allowlist, rate_limit
 from .tickets import sign_booking_group_ticket, verify_ticket_token
-
 
 def _passenger_email_for_user(user):
     """Passenger email key; must match book_seats_api (handles empty User.email)."""
@@ -974,6 +974,11 @@ def admin_retry_payment_webhook(request, event_pk):
     return redirect("admin_payment_webhook_detail", event_pk=event.pk)
 
 
+@rate_limit(
+    key_prefix="verify_ticket",
+    limit=lambda _r: int(getattr(settings, "VERIFY_TICKET_RATE_LIMIT_PER_MIN", 120)),
+    window_seconds=60,
+)
 def verify_ticket(request):
     """
     Public verification for signed QR ticket links (?t=...).
@@ -1549,18 +1554,46 @@ def admin_users(request):
                     user.is_active = True
                     user.save()
                     messages.success(request, f'User {user.username} has been activated.')
+                    log_admin_action(
+                        request,
+                        "user_activate",
+                        "User",
+                        user.id,
+                        {"username": user.username},
+                    )
                 elif action == 'deactivate':
                     user.is_active = False
                     user.save()
                     messages.success(request, f'User {user.username} has been deactivated.')
+                    log_admin_action(
+                        request,
+                        "user_deactivate",
+                        "User",
+                        user.id,
+                        {"username": user.username},
+                    )
                 elif action == 'make_staff':
                     user.is_staff = True
                     user.save()
                     messages.success(request, f'User {user.username} has been made staff.')
+                    log_admin_action(
+                        request,
+                        "user_make_staff",
+                        "User",
+                        user.id,
+                        {"username": user.username},
+                    )
                 elif action == 'remove_staff':
                     user.is_staff = False
                     user.save()
                     messages.success(request, f'User {user.username} is no longer staff.')
+                    log_admin_action(
+                        request,
+                        "user_remove_staff",
+                        "User",
+                        user.id,
+                        {"username": user.username},
+                    )
             except User.DoesNotExist:
                 messages.error(request, 'User not found.')
     
@@ -1934,6 +1967,12 @@ def _mark_webhook_failed(event: PaymentWebhookEvent, exc: Exception, *, status: 
 
 
 @csrf_exempt
+@ip_allowlist("PAYMENT_WEBHOOK_TRUSTED_IPS")
+@rate_limit(
+    key_prefix="payment_webhook",
+    limit=lambda _r: int(getattr(settings, "PAYMENT_WEBHOOK_RATE_LIMIT_PER_MIN", 120)),
+    window_seconds=60,
+)
 def payment_webhook(request):
     """
     Payment provider webhook: payment capture + refund reconciliation.
@@ -2036,6 +2075,11 @@ def payment_webhook(request):
         return JsonResponse({"success": False, "message": str(exc)}, status=400)
 
 
+@rate_limit(
+    key_prefix="verify_sms_receipt",
+    limit=lambda _r: int(getattr(settings, "VERIFY_SMS_RECEIPT_RATE_LIMIT_PER_MIN", 60)),
+    window_seconds=60,
+)
 def verify_sms_receipt(request, code: str):
     """
     Park-staff verification endpoint.
