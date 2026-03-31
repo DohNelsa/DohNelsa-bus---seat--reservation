@@ -1,6 +1,11 @@
 # Create your models here.
 from django.db import models
 from django.contrib.auth.models import User
+from django.conf import settings
+from django.utils import timezone
+from django.contrib.auth.models import Group, Permission, UserManager
+from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.validators import RegexValidator
 
 class Bus(models.Model):
     BUS_TYPES = [('Luxury', 'Luxury'), ('Standard', 'Standard'), ('Express', 'Express')]
@@ -69,6 +74,18 @@ class Schedule(models.Model):
 
 class BookingGroup(models.Model):
     """Model to group multiple seat bookings together for payment."""
+    SMS_STATUS_CHOICES = [
+        ('NOT_SENT', 'Not Sent'),
+        ('SENT', 'Sent'),
+        ('FAILED', 'Failed'),
+    ]
+
+    REFUND_STATUS_CHOICES = [
+        ('NONE', 'None'),
+        ('REQUESTED', 'Requested'),
+        ('COMPLETED', 'Completed'),
+    ]
+
     passenger = models.ForeignKey(Passenger, on_delete=models.CASCADE)
     schedule = models.ForeignKey(Schedule, on_delete=models.CASCADE)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -78,15 +95,181 @@ class BookingGroup(models.Model):
     verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_bookings')
     verified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
+    # SMS booking confirmation receipt (for park staff verification)
+    sms_receipt_code = models.CharField(max_length=40, unique=True, blank=True, null=True)
+    sms_status = models.CharField(max_length=20, choices=SMS_STATUS_CHOICES, default='NOT_SENT')
+    sms_sent_at = models.DateTimeField(null=True, blank=True)
+    sms_message_hash = models.CharField(max_length=64, blank=True, null=True)
+    sms_error_message = models.TextField(blank=True, null=True)
+    sms_retry_count = models.PositiveIntegerField(default=0)
+    sms_last_attempt_at = models.DateTimeField(null=True, blank=True)
+    sms_sent_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='sms_sent_bookings')
+
+    # Refund / rebooking (operations + finance)
+    refund_status = models.CharField(
+        max_length=20,
+        choices=REFUND_STATUS_CHOICES,
+        default='NONE',
+        db_index=True,
+    )
+    refund_notes = models.TextField(blank=True, null=True)
+    refund_requested_at = models.DateTimeField(blank=True, null=True)
+    refund_completed_at = models.DateTimeField(blank=True, null=True)
+    rebooking_of = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='rebookings',
+        help_text='If set, this booking replaces a prior cancelled/rebooked group.',
+    )
+    payment_waived = models.BooleanField(
+        default=False,
+        help_text='If true, confirmation does not require provider transaction verification (e.g. admin rebook credit).',
+    )
+    admin_notes = models.TextField(blank=True, null=True)
+
     def __str__(self):
         return f"Booking Group {self.id} - {self.passenger.name} ({self.bookings.count()} seats)"
+
+    class Meta:
+        permissions = [
+            ('access_admin_bookings', 'Access admin booking management'),
+            ('confirm_bookinggroup', 'Confirm booking groups'),
+            ('cancel_bookinggroup', 'Cancel booking groups'),
+            ('manage_refunds_rebooks', 'Manage refunds and passenger rebooking'),
+            ('view_paymentwebhooks', 'View payment webhook events'),
+            ('view_adminauditlog', 'View admin audit log'),
+            ('manage_routes_schedules', 'Manage routes, schedules, and buses'),
+            ('manage_sms_ops', 'Use SMS dashboard and resend receipts'),
+            ('manage_staff_users', 'Manage Django staff users'),
+        ]
     
     def get_total_seats(self):
         return self.bookings.count()
     
     def get_seat_numbers(self):
         return [booking.seat_number for booking in self.bookings.all()]
+
+
+class CustomUser(models.Model):
+    """
+    Kept for migration compatibility (see existing migrations `0011_customuser_sms.py`).
+
+    The app currently uses `django.contrib.auth.models.User`, but restoring this model
+    prevents Django from generating destructive migrations that delete it.
+    """
+
+    username = models.CharField(
+        verbose_name="username",
+        max_length=150,
+        unique=True,
+        validators=[UnicodeUsernameValidator()],
+    )
+    last_login = models.DateTimeField(blank=True, null=True, verbose_name="last login")
+    is_superuser = models.BooleanField(
+        default=False,
+        help_text="Designates that this user has all permissions without explicitly assigning them.",
+        verbose_name="superuser status",
+    )
+    first_name = models.CharField(max_length=150, blank=True, verbose_name="first name")
+    last_name = models.CharField(max_length=150, blank=True, verbose_name="last name")
+    is_staff = models.BooleanField(
+        default=False,
+        help_text="Designates whether the user can log into this admin site.",
+        verbose_name="staff status",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Designates whether this user should be treated as active.",
+        verbose_name="active",
+    )
+    date_joined = models.DateTimeField(default=timezone.now, verbose_name="date joined")
+    pin = models.CharField(
+        max_length=4,
+        help_text="Enter a 4-digit PIN",
+        validators=[RegexValidator(regex=r"^\d{4}$", message="PIN must be exactly 4 digits.")],
+    )
+    phone_number = models.CharField(
+        max_length=17,
+        unique=True,
+        help_text="Enter your phone number",
+        validators=[
+            RegexValidator(
+                regex=r"^\+?1?\d{9,15}$",
+                message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed.",
+            )
+        ],
+    )
+    email = models.EmailField(max_length=254, unique=True)
+
+    # Permissions fields (kept to match migration structure)
+    groups = models.ManyToManyField(
+        "auth.Group",
+        blank=True,
+        help_text="The groups this user belongs to. A user will get all permissions granted to each of their groups.",
+        related_name="customuser_set",
+        related_query_name="customuser",
+        verbose_name="groups",
+    )
+    user_permissions = models.ManyToManyField(
+        "auth.Permission",
+        blank=True,
+        help_text="Specific permissions for this user.",
+        related_name="customuser_set",
+        related_query_name="customuser",
+        verbose_name="user permissions",
+    )
+
+    objects = UserManager()
+
+    def __str__(self):
+        return self.username
+
+    class Meta:
+        verbose_name = "user"
+        verbose_name_plural = "users"
+
+
+class SMS(models.Model):
+    """
+    Kept for migration compatibility (see existing migrations).
+    """
+
+    SMS_STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("SENT", "Sent"),
+        ("FAILED", "Failed"),
+    ]
+
+    SMS_TYPE_CHOICES = [
+        ("CONFIRMATION", "Booking Confirmation"),
+        ("CANCELLATION", "Booking Cancellation"),
+    ]
+
+    phone_number = models.CharField(max_length=15)
+    message = models.TextField()
+    status = models.CharField(max_length=10, choices=SMS_STATUS_CHOICES, default="PENDING")
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(blank=True, null=True)
+    sms_type = models.CharField(max_length=20, choices=SMS_TYPE_CHOICES)
+
+    booking_group = models.ForeignKey(
+        BookingGroup,
+        on_delete=models.CASCADE,
+        related_name="sms_messages",
+    )
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sent_sms",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
 
 class Booking(models.Model):
     STATUS_CHOICES = [('Confirmed', 'Confirmed'), ('Cancelled', 'Cancelled'), ('Pending', 'Pending')]
@@ -150,6 +333,67 @@ class Payment(models.Model):
     
     class Meta:
         ordering = ['-payment_date']
+
+
+class PaymentWebhookEvent(models.Model):
+    """
+    Stores payment provider webhook events for idempotency and reconciliation audit.
+    """
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PROCESSED', 'Processed'),
+        ('REJECTED', 'Rejected'),
+        ('FAILED', 'Failed'),
+    ]
+
+    event_id = models.CharField(max_length=120, unique=True)
+    event_kind = models.CharField(
+        max_length=20,
+        default='payment',
+        db_index=True,
+        help_text='payment or refund (from provider webhook payload).',
+    )
+    provider = models.CharField(max_length=40, default='GENERIC')
+    booking_group = models.ForeignKey(BookingGroup, on_delete=models.SET_NULL, null=True, blank=True)
+    transaction_id = models.CharField(max_length=120, blank=True, null=True)
+    payload = models.JSONField(default=dict, blank=True)
+    signature = models.CharField(max_length=255, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    processed = models.BooleanField(default=False)
+    error_message = models.TextField(blank=True, null=True)
+    received_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-received_at']
+
+    def __str__(self):
+        return f"{self.provider} event {self.event_id} ({self.status})"
+
+
+class AdminAuditLog(models.Model):
+    """
+    Append-only record of privileged staff actions (confirm/cancel bookings, price edits, etc.).
+    """
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="admin_audit_entries")
+    action = models.CharField(max_length=64, db_index=True)
+    target_type = models.CharField(max_length=32, db_index=True)
+    target_id = models.CharField(max_length=64, blank=True)
+    detail = models.JSONField(default=dict, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["-created_at", "action"]),
+        ]
+
+    def __str__(self):
+        return f"{self.action} {self.target_type}:{self.target_id} @ {self.created_at}"
+
 
 class Support(models.Model):
     STATUS_CHOICES = [

@@ -59,15 +59,44 @@
                         <div>
                             <p class="text-sm text-gray-500">SMS Notifications</p>
                             <p class="font-medium text-sm">
-                                {% if booking_group.status == 'Confirmed' %}
-                                    <span class="text-green-600">✓ Confirmation sent</span>
-                                {% elif booking_group.status == 'Cancelled' %}
-                                    <span class="text-red-600">✓ Cancellation sent</span>
+                                {% if booking_group.sms_status == 'SENT' %}
+                                    <span class="text-green-600">✓ Receipt sent</span>
+                                    {% if booking_group.sms_receipt_code %}
+                                        <div class="mt-1 text-xs text-gray-600">
+                                            Code: <span class="font-mono">{{ booking_group.sms_receipt_code }}</span>
+                                        </div>
+                                    {% endif %}
+                                {% elif booking_group.sms_status == 'FAILED' %}
+                                    <span class="text-red-600">✗ SMS failed</span>
+                                    {% if booking_group.sms_error_message %}
+                                        <div class="mt-1 text-xs text-red-600 break-words">
+                                            Reason: {{ booking_group.sms_error_message }}
+                                        </div>
+                                    {% endif %}
                                 {% else %}
-                                    <span class="text-gray-500">Pending</span>
+                                    <span class="text-gray-500">Not sent</span>
                                 {% endif %}
                             </p>
                         </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Refund status</p>
+                            <p class="font-medium">{{ booking_group.get_refund_status_display }}</p>
+                            {% if booking_group.refund_requested_at %}
+                            <p class="text-xs text-gray-500">Requested {{ booking_group.refund_requested_at|date:"Y-m-d H:i" }}</p>
+                            {% endif %}
+                            {% if booking_group.payment_waived %}
+                            <p class="text-xs text-amber-700 mt-1">Payment waived (e.g. rebook) — confirm without provider txn.</p>
+                            {% endif %}
+                            {% if booking_group.rebooking_of_id %}
+                            <p class="text-xs text-gray-600 mt-1">Rebook of group #{{ booking_group.rebooking_of_id }}</p>
+                            {% endif %}
+                        </div>
+                        {% if booking_group.admin_notes %}
+                        <div>
+                            <p class="text-sm text-gray-500">Admin notes</p>
+                            <p class="text-sm whitespace-pre-wrap">{{ booking_group.admin_notes }}</p>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
                 <div>
@@ -103,7 +132,18 @@
         </div>
     </div>
 
-
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
+        <div class="p-6 flex flex-col md:flex-row gap-6 md:items-start">
+            <div class="flex-1">
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">Digital ticket (QR)</h3>
+                <p class="text-sm text-gray-600 mb-3">Signed link for gate checks. Scans open the public verify page.</p>
+                <p class="text-xs text-gray-500 break-all"><a href="{{ ticket_verify_url }}" class="text-blue-600 hover:underline">{{ ticket_verify_url }}</a></p>
+            </div>
+            <div class="shrink-0 text-center">
+                <img src="{{ ticket_qr_url }}" width="160" height="160" alt="Ticket QR" class="inline-block border border-gray-200 rounded" />
+            </div>
+        </div>
+    </div>
 
     <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
         <div class="p-6">
@@ -170,13 +210,45 @@
                     <i class="fas fa-check mr-2"></i>Confirm Booking Group
                 </a>
             {% endif %}
+
+            {% if booking_group.status == 'Confirmed' and booking_group.sms_status != 'SENT' %}
+                <a href="{% url 'admin_resend_sms_receipt' booking_group.id %}" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" onclick="return confirm('Resend SMS receipt code to the passenger?')">
+                    <i class="fas fa-paper-plane mr-2"></i>Resend SMS Receipt
+                </a>
+            {% endif %}
+
             {% if booking_group.status != 'Cancelled' %}
             <a href="{% url 'admin_cancel_booking' booking_group.id %}" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2" onclick="return confirm('Are you sure you want to cancel this booking group? This will send SMS notification to the passenger.')">
                 <i class="fas fa-times mr-2"></i>Cancel Booking Group
             </a>
             {% endif %}
+            {% if can_manage_refunds and booking_group.status != 'Cancelled' and booking_group.refund_status == 'NONE' %}
+            <a href="{% url 'admin_rebook_booking' booking_group.id %}" class="bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Rebook</a>
+            {% endif %}
         </div>
     </div>
+
+    {% if can_manage_refunds and booking_group.refund_status == 'NONE' and booking_group.status != 'Cancelled' %}
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-100">
+        <h3 class="text-lg font-semibold text-gray-900 mb-2">Refund workflow</h3>
+        <p class="text-sm text-gray-600 mb-3">Request a refund after agreeing with the passenger. Complete only after money has been returned via your payment provider.</p>
+        <form method="post" action="{% url 'admin_request_refund' booking_group.id %}" class="flex flex-col sm:flex-row gap-2 items-start">
+            {% csrf_token %}
+            <input type="text" name="notes" placeholder="Optional notes" class="flex-1 rounded border-gray-300 text-sm px-3 py-2 max-w-md" />
+            <button type="submit" class="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 text-sm">Request refund</button>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if can_manage_refunds and booking_group.refund_status == 'REQUESTED' %}
+    <div class="bg-amber-50 rounded-lg shadow-sm p-6 mb-6 border border-amber-200">
+        <p class="text-sm text-amber-900 mb-3">Refund requested. When the provider has returned funds, mark complete to cancel seats in the system.</p>
+        <form method="post" action="{% url 'admin_complete_refund' booking_group.id %}">
+            {% csrf_token %}
+            <button type="submit" class="px-4 py-2 bg-amber-800 text-white rounded-md hover:bg-amber-900 text-sm" onclick="return confirm('Mark refund complete and cancel this booking?');">Mark refund complete</button>
+        </form>
+    </div>
+    {% endif %}
 </div>
 
 <style>

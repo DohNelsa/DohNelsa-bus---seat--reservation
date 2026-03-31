@@ -2,6 +2,9 @@ from django.urls import path
 from NelsaApp import views
 
 urlpatterns = [
+    path('health/', views.health_live, name='health_live'),
+    path('health/ready/', views.health_ready, name='health_ready'),
+    path('internal/metrics/', views.internal_metrics, name='internal_metrics'),
     path('sitemap.xml', views.sitemap_xml, name='sitemap_xml'),
     path('googlea0b32e245a16c475.html', views.google_verification, name='google_verification'),
     path('', views.index, name = 'index'),
@@ -27,7 +30,11 @@ urlpatterns = [
     path('admin-bookings/', views.admin_bookings, name='admin_bookings'),
     path('admin-bookings/<int:booking_group_id>/', views.admin_booking_detail, name='admin_booking_detail'),
     path('admin-bookings/<int:booking_group_id>/confirm/', views.admin_confirm_booking, name='admin_confirm_booking'),
+    path('admin-bookings/<int:booking_group_id>/resend-sms/', views.admin_resend_sms_receipt, name='admin_resend_sms_receipt'),
     path('admin-bookings/<int:booking_group_id>/cancel/', views.admin_cancel_booking, name='admin_cancel_booking'),
+    path('admin-bookings/<int:booking_group_id>/request-refund/', views.admin_request_refund, name='admin_request_refund'),
+    path('admin-bookings/<int:booking_group_id>/complete-refund/', views.admin_complete_refund, name='admin_complete_refund'),
+    path('admin-bookings/<int:booking_group_id>/rebook/', views.admin_rebook_booking, name='admin_rebook_booking'),
     
     # User profile
     path('profile/', views.user_profile, name='user_profile'),
@@ -36,10 +43,15 @@ urlpatterns = [
     path('manage-users/<int:user_id>/', views.admin_user_detail, name='admin_user_detail'),
     path('fix-passengers/', views.fix_duplicate_passengers, name='fix_passengers'),
     path('admin-support/', views.admin_support, name='admin_support'),
+    path('admin-sms/', views.admin_sms_dashboard, name='admin_sms_dashboard'),
+    path('admin-sms/retry-all-failed/', views.admin_sms_retry_all_failed, name='admin_sms_retry_all_failed'),
+    path('admin-payment-webhooks/', views.admin_payment_webhooks, name='admin_payment_webhooks'),
+    path('admin-payment-webhooks/<int:event_pk>/', views.admin_payment_webhook_detail, name='admin_payment_webhook_detail'),
     path('manage-reports/', views.admin_reports, name='admin_reports'),
     path('payment/<int:booking_group_id>/', views.payment_page, name='payment'),
     path('process-payment/<str:payment_method>/<int:booking_group_id>/', views.process_payment, name='process_payment'),
     path('verify-payment/', views.verify_payment, name='verify_payment'),
+    path('webhooks/payment/', views.payment_webhook, name='payment_webhook'),
     
     # Bus management routes
     path('manage-buses/', views.admin_buses, name='admin_buses'),
@@ -60,4 +72,15 @@ urlpatterns = [
     # path('manage-sms/', views.admin_sms, name='admin_sms'),
     # path('manage-sms/<int:sms_id>/', views.admin_sms_detail, name='admin_sms_detail'),
     # path('manage-sms/<int:sms_id>/send/', views.admin_send_sms, name='admin_send_sms'),
+
+    # Park/staff verification of SMS receipt code
+    path('verify-sms-receipt/<str:code>/', views.verify_sms_receipt, name='verify_sms_receipt'),
+
+    # Park/staff verification page (simple UI)
+    path('sms-receipt-verify/', views.sms_receipt_verify_page, name='sms_receipt_verify_page'),
+
+    # Signed QR ticket (public verify + PNG for scanners)
+    path('verify-ticket/', views.verify_ticket, name='verify_ticket'),
+    path('ticket-qr.png', views.ticket_qr_png, name='ticket_qr_png'),
+    path('admin-audit-log/', views.admin_audit_log_view, name='admin_audit_log'),
 ]

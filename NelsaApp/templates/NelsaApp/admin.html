@@ -92,6 +92,21 @@
             <a href="{% url 'admin_support' %}" class="btn btn-primary">Support Channel</a>
         </div>
         <div class="action-card">
+            <h3>SMS Dashboard</h3>
+            <p>Monitor delivery, failures, and retry SMS sends</p>
+            <a href="{% url 'admin_sms_dashboard' %}" class="btn btn-primary">Open SMS Dashboard</a>
+        </div>
+        <div class="action-card">
+            <h3>Payment Webhooks</h3>
+            <p>Audit payment provider webhook events and payloads</p>
+            <a href="{% url 'admin_payment_webhooks' %}" class="btn btn-primary">Open Webhook Log</a>
+        </div>
+        <div class="action-card">
+            <h3>Admin audit log</h3>
+            <p>Confirmations, cancellations, route and schedule price actions</p>
+            <a href="{% url 'admin_audit_log' %}" class="btn btn-primary">View audit log</a>
+        </div>
+        <div class="action-card">
             <h3>Fix Passengers</h3>
             <p>Fix duplicate or generic passenger names</p>
             <a href="{% url 'fix_passengers' %}" class="btn btn-warning">Fix Passengers</a>

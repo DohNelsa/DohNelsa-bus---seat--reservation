@@ -10,8 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -20,14 +21,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-# Use environment variable for SECRET_KEY, fallback to default for development
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-cbg_-2@a!8qdhp%l4yii#7p&u$%16z6))+qo%r)0c7_gfjg9@p')
+# Environment-first secret key; dev-safe fallback only when env var is not set.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-only-change-me')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # Use environment variable to control DEBUG setting
 # Convert string 'False' to boolean False
 DEBUG_ENV = os.environ.get('DJANGO_DEBUG', 'False')
 DEBUG = DEBUG_ENV.lower() in ('true', '1', 'yes', 'on')
+DEPLOYMENT_ENV = os.environ.get('DEPLOYMENT_ENV', 'development').strip().lower()
 
 # Configure ALLOWED_HOSTS from environment variable or use Render-safe defaults
 ALLOWED_HOSTS_ENV = os.environ.get('ALLOWED_HOSTS', '')
@@ -67,7 +69,7 @@ ROOT_URLCONF = 'Nelsaproject.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'NelsaApp/templates')],
+        'DIRS': [str(BASE_DIR / 'NelsaApp' / 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -137,11 +139,9 @@ STATICFILES_DIRS = [
 # WhiteNoise configuration for serving static files
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-# Add this for media files if you're using them
+# Media files
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MEDIA_ROOT = BASE_DIR / 'media'
 
 
 # Default primary key field type
@@ -149,30 +149,102 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Email Configuration
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'  # For Gmail
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'nelsadoh@gmail.com'  # Replace with your email
-EMAIL_HOST_PASSWORD = 'slrv nqwj qqnj lfcl'  # Replace with your app password
-DEFAULT_FROM_EMAIL = 'nelsadoh@gmail.com'
+# Email Configuration (environment-driven)
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes', 'on')
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@moghamo.local')
 
-# SMS Configuration
-# SMS functionality is currently disabled
-SMS_ENABLED = False
-SMS_PROVIDER = 'mock'  # Options: 'mock', 'twilio', 'africas_talking'
-SMS_FROM_NUMBER = '+1234567890'  # Your SMS sender number
+# Branding / public URLs (used in emails, QR absolute links — set via environment in production)
+COMPANY_NAME = os.environ.get('COMPANY_NAME', 'MOGHAMO EXPRESS')
+COMPANY_SUPPORT_EMAIL = os.environ.get('COMPANY_SUPPORT_EMAIL', DEFAULT_FROM_EMAIL)
+COMPANY_SUPPORT_PHONE = os.environ.get('COMPANY_SUPPORT_PHONE', '+237675315422')
+PUBLIC_SITE_URL = os.environ.get('PUBLIC_SITE_URL', 'http://127.0.0.1:8000').rstrip('/')
 
-# Twilio Configuration (if using Twilio)
-TWILIO_ACCOUNT_SID = 'your_twilio_account_sid'
-TWILIO_AUTH_TOKEN = 'your_twilio_auth_token'
-TWILIO_PHONE_NUMBER = '+1234567890'
+# Payment webhook security
+PAYMENT_WEBHOOK_SECRET = os.environ.get('PAYMENT_WEBHOOK_SECRET', '')
+# Optional HMAC of raw body (hex) — header X-Webhook-Body-Signature
+PAYMENT_WEBHOOK_HMAC_SECRET = os.environ.get('PAYMENT_WEBHOOK_HMAC_SECRET', '')
+
+# Ops alerts (comma-separated emails) + webhook failure emails
+ALERT_EMAIL_RECIPIENTS = [
+    e.strip()
+    for e in os.environ.get('ALERT_EMAIL_RECIPIENTS', '').split(',')
+    if e.strip()
+]
+ALERT_ON_WEBHOOK_FAILURE = os.environ.get('ALERT_ON_WEBHOOK_FAILURE', 'False').lower() in (
+    'true',
+    '1',
+    'yes',
+    'on',
+)
+
+# Internal JSON metrics (token in X-Metrics-Token or ?token=); if unset, staff with webhook perm may access
+METRICS_AUTH_TOKEN = os.environ.get('METRICS_AUTH_TOKEN', '')
+
+# Signed QR ticket tokens (optional separate secret; defaults to SECRET_KEY if unset)
+TICKET_SIGNING_SECRET = os.environ.get('TICKET_SIGNING_SECRET', '')
+TICKET_MAX_AGE_SECONDS = int(os.environ.get('TICKET_MAX_AGE_SECONDS', str(120 * 24 * 3600)))
+
+# SMS Configuration (all live credentials from environment — no API secrets in code)
+SMS_ENABLED = os.environ.get('SMS_ENABLED', 'True').lower() in ('true', '1', 'yes', 'on')
+SMS_PROVIDER = os.environ.get('SMS_PROVIDER', 'twilio')  # 'mock', 'twilio', or 'africas_talking' (AT not implemented)
+SMS_FROM_NUMBER = os.environ.get('SMS_FROM_NUMBER', '')
+
+# Twilio (required in production when SMS_ENABLED and SMS_PROVIDER=twilio — see _validate_required_env)
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
+TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
 
 # Africa's Talking Configuration (if using Africa's Talking)
-AFRICASTALKING_API_KEY = 'your_africas_talking_api_key'
-AFRICASTALKING_USERNAME = 'your_africas_talking_username'
-AFRICASTALKING_SENDER_ID = 'NelsaNdo'
+AFRICASTALKING_API_KEY = os.environ.get('AFRICASTALKING_API_KEY', '')
+AFRICASTALKING_USERNAME = os.environ.get('AFRICASTALKING_USERNAME', '')
+AFRICASTALKING_SENDER_ID = os.environ.get('AFRICASTALKING_SENDER_ID', 'NelsaNdo')
+
+
+def _validate_required_env():
+    """
+    Enforce critical env vars in production-like environments.
+    Keeps local development flexible while protecting real deployments.
+    """
+    if DEPLOYMENT_ENV not in ('production', 'staging'):
+        return
+
+    required = {
+        'DJANGO_SECRET_KEY': os.environ.get('DJANGO_SECRET_KEY', ''),
+        'EMAIL_HOST_USER': EMAIL_HOST_USER,
+        'EMAIL_HOST_PASSWORD': EMAIL_HOST_PASSWORD,
+        'DEFAULT_FROM_EMAIL': DEFAULT_FROM_EMAIL,
+        'PAYMENT_WEBHOOK_SECRET': PAYMENT_WEBHOOK_SECRET,
+        'PUBLIC_SITE_URL': PUBLIC_SITE_URL,
+        'COMPANY_SUPPORT_PHONE': COMPANY_SUPPORT_PHONE,
+    }
+
+    if SMS_ENABLED and SMS_PROVIDER == 'twilio':
+        required.update(
+            {
+                'TWILIO_ACCOUNT_SID': TWILIO_ACCOUNT_SID,
+                'TWILIO_AUTH_TOKEN': TWILIO_AUTH_TOKEN,
+                'TWILIO_PHONE_NUMBER': TWILIO_PHONE_NUMBER,
+            }
+        )
+
+    missing = [name for name, value in required.items() if not str(value).strip()]
+    if missing:
+        raise ImproperlyConfigured(
+            f"Missing required environment variable(s) for {DEPLOYMENT_ENV}: {', '.join(missing)}"
+        )
+
+    if SECRET_KEY == 'dev-only-change-me':
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must be set to a strong secret in production/staging."
+        )
+
+
+_validate_required_env()
 
 # For development/testing, you can use console backend instead:
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
@@ -214,7 +286,7 @@ if not DEBUG:
             'file': {
                 'level': 'INFO',
                 'class': 'logging.FileHandler',
-                'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
+                'filename': str(BASE_DIR / 'logs' / 'django.log'),
             },
         },
         'loggers': {
@@ -222,6 +294,16 @@ if not DEBUG:
                 'handlers': ['file'],
                 'level': 'INFO',
                 'propagate': True,
+            },
+            'nelsa.audit': {
+                'handlers': ['file'],
+                'level': 'INFO',
+                'propagate': False,
+            },
+            'nelsa.ops': {
+                'handlers': ['file'],
+                'level': 'WARNING',
+                'propagate': False,
             },
         },
     }
@@ -238,5 +320,17 @@ else:
         'root': {
             'handlers': ['console'],
             'level': 'INFO',
+        },
+        'loggers': {
+            'nelsa.audit': {
+                'handlers': ['console'],
+                'level': 'INFO',
+                'propagate': False,
+            },
+            'nelsa.ops': {
+                'handlers': ['console'],
+                'level': 'WARNING',
+                'propagate': False,
+            },
         },
     }

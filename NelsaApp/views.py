@@ -1,30 +1,152 @@
-from django.shortcuts import render, redirect
+from io import BytesIO
+
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
+from urllib.parse import urlencode
 from . forms import LoginForm, BookingForm
-from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from .forms import BookingForm
 
-from django.contrib.auth.decorators import login_required, user_passes_test
-from .models import Bus, Seat, Booking, Schedule, Route, Passenger, Payment, Support, BookingGroup
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_GET
+from .models import (
+    AdminAuditLog,
+    Booking,
+    BookingGroup,
+    Bus,
+    Passenger,
+    Payment,
+    Route,
+    Schedule,
+    Seat,
+    Support,
+)
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from .models import Seat
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
-from django.db.models import Sum
-from django.db import transaction
+from django.db.models import Sum, Count
+from django.db import transaction, IntegrityError
 from django.core.paginator import Paginator
 from django.utils import timezone
 import json
 from datetime import datetime, timedelta, time
 import random
 from django.db.models import Q
+import re
+import secrets
+from decimal import Decimal, InvalidOperation
 from django.core.mail import send_mail
 from django.conf import settings
 from django.http import FileResponse
 import os
+
+from .notifications import send_booking_confirmed_email
+from .sms import send_booking_confirmed_sms
+from .models import PaymentWebhookEvent
+import hashlib
+import hmac
+
+from .audit import log_admin_action
+from .monitoring import send_ops_alert
+from .rbac import require_admin_portal, require_perm, user_has_perm
+from .tickets import sign_booking_group_ticket, verify_ticket_token
+
+
+def _passenger_email_for_user(user):
+    """Passenger email key; must match book_seats_api (handles empty User.email)."""
+    return (user.email or f"user-{user.id}@example.com").strip().lower()
+
+RESERVATION_HOLD_MINUTES = 10
+
+
+def release_expired_pending_reservations(schedule=None):
+    """
+    Release seats reserved in Pending booking groups after hold timeout.
+
+    Rules:
+    - Only Pending booking groups are candidates.
+    - Only unpaid groups are released (no completed payment).
+    - Any group older than RESERVATION_HOLD_MINUTES is removed.
+    """
+    cutoff = timezone.now() - timedelta(minutes=RESERVATION_HOLD_MINUTES)
+
+    groups = BookingGroup.objects.filter(status='Pending', created_at__lt=cutoff)
+    if schedule is not None:
+        groups = groups.filter(schedule=schedule)
+
+    # Keep groups where payment is completed (awaiting admin confirmation).
+    groups = groups.exclude(payment__status='COMPLETED')
+
+    if groups.exists():
+        groups.delete()
+
+
+def normalize_cameroon_phone(phone_raw: str) -> str | None:
+    """
+    Normalize and validate a Cameroon phone number.
+
+    Requirement: must start with `+237`.
+    Cameroon numbers are typically 8-9 digits after `+237` (often mobile).
+    Examples accepted: `+237699123456`, `237699123456`, `+237 699 123 456`.
+    """
+    if phone_raw is None:
+        return None
+
+    phone = str(phone_raw).strip()
+    phone = re.sub(r"[\s\-\(\)]", "", phone)  # remove common separators
+
+    # Handle common international prefix variants.
+    if phone.startswith("00"):
+        phone = "+" + phone[2:]
+    if phone.startswith("237") and not phone.startswith("+"):
+        phone = "+237" + phone[3:]
+
+    if not phone.startswith("+237"):
+        return None
+
+    digits = re.sub(r"\D", "", phone)  # keep only digits
+    if not digits.startswith("237"):
+        return None
+
+    national = digits[3:]
+    if len(national) not in (8, 9):
+        return None
+
+    return "+237" + national
+
+
+def _require_valid_passenger_contact(request):
+    """
+    Enforce mandatory name + +237 phone before seat booking.
+    Returns a Passenger instance or a JsonResponse-like error tuple.
+    """
+    passenger_email = _passenger_email_for_user(request.user)
+    passenger = Passenger.objects.filter(email=passenger_email).first()
+
+    if passenger is None:
+        return None, JsonResponse(
+            {
+                "success": False,
+                "message": "Please complete your profile (Full Name and Phone starting with +237) before booking.",
+            },
+            status=400,
+        )
+
+    name = (passenger.name or "").strip()
+    phone = normalize_cameroon_phone(passenger.phone)
+    if not name or not phone:
+        return None, JsonResponse(
+            {
+                "success": False,
+                "message": "Your profile needs a valid Full Name and a Phone starting with +237 before booking. Go to My Profile to update.",
+            },
+            status=400,
+        )
+
+    return passenger, None
+
 
 # SMS functionality disabled
 # from .sms_service import send_booking_confirmation_sms, send_booking_cancellation_sms
@@ -248,7 +370,7 @@ def booking_page(request):
 def book_success(request):
     # Get the most recent booking for the current user
     if request.user.is_authenticated:
-        booking = Booking.objects.filter(passenger__email=request.user.email).order_by('-booking_date').first()
+        booking = Booking.objects.filter(passenger__email=_passenger_email_for_user(request.user)).order_by('-booking_date').first()
     else:
         booking = None
     
@@ -302,11 +424,8 @@ def book_seat(request):
 
 # Admin view
 @login_required
+@require_admin_portal
 def admin_view(request):
-    # Check if user is admin
-    if not request.user.is_staff:
-        return redirect('home')
-    
     # Get statistics for the dashboard
     total_buses = Bus.objects.count()
     total_bookings = Booking.objects.count()
@@ -340,6 +459,9 @@ def get_seats(request, schedule_id):
     """API endpoint to get seats for a specific schedule."""
     schedule = get_object_or_404(Schedule, id=schedule_id)
     bus = schedule.bus
+
+    # Auto-release expired unpaid pending reservations.
+    release_expired_pending_reservations(schedule=schedule)
 
     seats = []
 
@@ -393,34 +515,54 @@ def book_seats_api(request):
             return JsonResponse({'success': False, 'message': 'No valid seats selected'})
         
         schedule = get_object_or_404(Schedule, id=schedule_id)
+
+        # Auto-release expired unpaid pending reservations before seat checks.
+        release_expired_pending_reservations(schedule=schedule)
         
         # Check if user is authenticated
         if not request.user.is_authenticated:
             return JsonResponse({'success': False, 'message': 'You must be logged in to book seats'})
         
-        # Get or create passenger with unique identification
-        # Use a combination of user info to ensure uniqueness
-        user_display_name = request.user.get_full_name()
-        if not user_display_name or user_display_name.strip() == '':
-            # If no full name, create a unique display name using username and user ID
-            user_display_name = f"{request.user.username} (ID: {request.user.id})"
-        
-        passenger_email = (request.user.email or f"user-{request.user.id}@example.com").strip().lower()
-        passenger, created = Passenger.objects.get_or_create(
-            email=passenger_email,
-            defaults={
-                'name': user_display_name,
-                # Passenger.phone is unique; use a deterministic unique fallback
-                'phone': f"U{request.user.id:010d}"
-            }
-        )
-        
-        # If passenger already exists but name is generic, update it with unique identifier
-        if not created and (passenger.name == request.user.username or 
-                          passenger.name == 'Doh Derick' or 
-                          passenger.name == 'N/A'):
-            passenger.name = f"{request.user.username} (ID: {request.user.id})"
-            passenger.save()
+        # Passenger contact is mandatory before booking (for SMS confirmations).
+        customer_name = (data.get('customer_name') or '').strip()
+        customer_phone_raw = (data.get('customer_phone') or '').strip()
+        if not customer_name or not customer_phone_raw:
+            return JsonResponse(
+                {
+                    'success': False,
+                    'message': 'Please enter your Full Name and a Phone number starting with +237 before booking.',
+                },
+                status=400,
+            )
+
+        normalized_phone = normalize_cameroon_phone(customer_phone_raw)
+        if not normalized_phone:
+            return JsonResponse(
+                {
+                    'success': False,
+                    'message': 'Invalid phone number. Phone must start with +237 and contain 8-9 digits after +237.',
+                },
+                status=400,
+            )
+
+        passenger_email = _passenger_email_for_user(request.user)
+        try:
+            passenger, created = Passenger.objects.get_or_create(
+                email=passenger_email,
+                defaults={'name': customer_name, 'phone': normalized_phone},
+            )
+            if not created:
+                passenger.name = customer_name
+                passenger.phone = normalized_phone
+                passenger.save()
+        except IntegrityError:
+            return JsonResponse(
+                {
+                    'success': False,
+                    'message': 'This phone number is already used by another passenger. Please use a different phone.',
+                },
+                status=400,
+            )
         
         # Ensure selected seat numbers are within available range for this bus
         bus_seats = Seat.objects.filter(bus=schedule.bus)
@@ -485,20 +627,24 @@ def booking_success_view(request):
     """View for the booking success page."""
     # Get the most recent booking for the current user
     if request.user.is_authenticated:
-        booking = Booking.objects.filter(passenger__email=request.user.email).order_by('-booking_date').first()
+        booking = Booking.objects.filter(passenger__email=_passenger_email_for_user(request.user)).order_by('-booking_date').first()
     else:
         booking = None
-    
-    return render(request, 'NelsaApp/booking_success.html', {'booking': booking})
+
+    ctx = {'booking': booking}
+    if booking and booking.booking_group_id:
+        tid = booking.booking_group_id
+        token = sign_booking_group_ticket(tid)
+        ctx['ticket_verify_url'] = request.build_absolute_uri(reverse('verify_ticket')) + '?' + urlencode({'t': token})
+        ctx['ticket_qr_url'] = request.build_absolute_uri(reverse('ticket_qr_png')) + '?' + urlencode({'t': token})
+
+    return render(request, 'NelsaApp/booking_success.html', ctx)
 
 # Admin booking management views
 @login_required
+@require_perm("access_admin_bookings")
 def admin_bookings(request):
     """Admin view to manage all bookings organized by customer."""
-    # Check if user is admin
-    if not request.user.is_staff:
-        return redirect('index')
-    
     # Get filter parameters
     search_query = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
@@ -579,57 +725,557 @@ def admin_bookings(request):
     return render(request, 'NelsaApp/admin_bookings.html', context)
 
 @login_required
+@require_perm("access_admin_bookings")
 def admin_booking_detail(request, booking_group_id):
     """Admin view to see booking group details."""
-    # Check if user is admin
-    if not request.user.is_staff:
-        return redirect('index')
-    
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
-    
-    return render(request, 'NelsaApp/admin_booking_detail.html', {'booking_group': booking_group})
+
+    token = sign_booking_group_ticket(booking_group.id)
+    ticket_qr_url = request.build_absolute_uri(reverse('ticket_qr_png')) + '?' + urlencode({'t': token})
+    ticket_verify_url = request.build_absolute_uri(reverse('verify_ticket')) + '?' + urlencode({'t': token})
+
+    return render(
+        request,
+        'NelsaApp/admin_booking_detail.html',
+        {
+            'booking_group': booking_group,
+            'ticket_qr_url': ticket_qr_url,
+            'ticket_verify_url': ticket_verify_url,
+            'can_manage_refunds': user_has_perm(request.user, 'manage_refunds_rebooks'),
+        },
+    )
 
 @login_required
+@require_perm("confirm_bookinggroup")
 def admin_confirm_booking(request, booking_group_id):
     """Admin view to confirm a booking group only if transaction is verified."""
-    if not request.user.is_staff:
-        return redirect('index')
-    
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
     
     if booking_group.status == 'Pending':
-        if not booking_group.transaction_verified or not booking_group.transaction_id:
+        can_confirm = booking_group.payment_waived or (
+            booking_group.transaction_verified and booking_group.transaction_id
+        )
+        if not can_confirm:
             messages.error(request, 'Cannot confirm booking. Please verify a valid transaction ID first.')
             return redirect('admin_booking_detail', booking_group_id=booking_group.id)
         
         # Update booking status
         booking_group.bookings.update(status='Confirmed')
         booking_group.status = 'Confirmed'
+        booking_group.verified_by = request.user
+        booking_group.verified_at = timezone.now()
         booking_group.save()
-        
-        # SMS functionality disabled
-        messages.success(request, f'Booking Group #{booking_group.id} has been confirmed.')
+
+        send_booking_confirmed_email(booking_group, source='admin')
+        sms_ok = send_booking_confirmed_sms(booking_group, source='admin')
+
+        if sms_ok:
+            messages.success(request, f'Booking Group #{booking_group.id} confirmed. SMS receipt sent successfully.')
+        else:
+            booking_group.refresh_from_db()
+            sms_error = booking_group.sms_error_message or 'SMS send failed for unknown reason.'
+            messages.warning(request, f'Booking Group #{booking_group.id} confirmed, but SMS failed: {sms_error}')
+        log_admin_action(
+            request,
+            'booking_confirm',
+            'BookingGroup',
+            booking_group.id,
+            {'sms_sent': sms_ok, 'transaction_id': booking_group.transaction_id},
+        )
     else:
         messages.error(request, f'Booking Group #{booking_group.id} cannot be confirmed because it is not in Pending status.')
     
     return redirect('admin_bookings')
 
 @login_required
+@require_perm("manage_sms_ops")
+def admin_resend_sms_receipt(request, booking_group_id):
+    """Admin can resend the SMS receipt if the first send failed."""
+    booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
+    if booking_group.status != 'Confirmed':
+        messages.error(request, f'Cannot resend SMS: Booking Group #{booking_group.id} is not confirmed.')
+        return redirect('admin_booking_detail', booking_group_id=booking_group.id)
+
+    if booking_group.sms_status == 'SENT':
+        messages.info(request, f'SMS receipt was already sent for Booking Group #{booking_group.id}.')
+        return redirect('admin_booking_detail', booking_group_id=booking_group.id)
+
+    sms_ok = send_booking_confirmed_sms(booking_group, source='admin-resend')
+    if sms_ok:
+        messages.success(request, f'SMS receipt sent for Booking Group #{booking_group.id}.')
+    else:
+        booking_group.refresh_from_db()
+        sms_error = booking_group.sms_error_message or 'SMS send failed for unknown reason.'
+        messages.error(request, f'SMS resend failed for Booking Group #{booking_group.id}: {sms_error}')
+    log_admin_action(
+        request,
+        'sms_receipt_resend',
+        'BookingGroup',
+        booking_group.id,
+        {'success': sms_ok},
+    )
+    return redirect('admin_booking_detail', booking_group_id=booking_group.id)
+
+
+@login_required
+@require_perm("manage_sms_ops")
+def admin_sms_dashboard(request):
+    """
+    SMS delivery dashboard with retry actions for failures.
+    """
+    sms_qs = BookingGroup.objects.exclude(sms_status='NOT_SENT').select_related('passenger').order_by('-id')
+
+    stats = BookingGroup.objects.aggregate(
+        sent=Count('id', filter=Q(sms_status='SENT')),
+        failed=Count('id', filter=Q(sms_status='FAILED')),
+        pending=Count('id', filter=Q(sms_status='NOT_SENT')),
+    )
+
+    failed_groups = (
+        BookingGroup.objects.filter(sms_status='FAILED', status='Confirmed')
+        .select_related('passenger', 'schedule__route', 'schedule__bus')
+        .order_by('-sms_last_attempt_at', '-id')[:50]
+    )
+
+    recent_sent = (
+        BookingGroup.objects.filter(sms_status='SENT')
+        .select_related('passenger', 'schedule__route', 'schedule__bus')
+        .order_by('-sms_sent_at', '-id')[:50]
+    )
+
+    context = {
+        'sent_count': stats.get('sent', 0) or 0,
+        'failed_count': stats.get('failed', 0) or 0,
+        'pending_count': stats.get('pending', 0) or 0,
+        'failed_groups': failed_groups,
+        'recent_sent': recent_sent,
+        'sms_qs': sms_qs[:100],
+    }
+    return render(request, 'NelsaApp/admin_sms_dashboard.html', context)
+
+
+@login_required
+@require_perm("manage_sms_ops")
+def admin_sms_retry_all_failed(request):
+    """
+    Retry SMS delivery for all currently failed confirmed booking groups.
+    """
+    failed_groups = BookingGroup.objects.filter(sms_status='FAILED', status='Confirmed').order_by('-id')
+    if not failed_groups.exists():
+        messages.info(request, 'No failed SMS records to retry.')
+        return redirect('admin_sms_dashboard')
+
+    success = 0
+    failed = 0
+    for bg in failed_groups:
+        ok = send_booking_confirmed_sms(bg, source='admin-bulk-retry')
+        if ok:
+            success += 1
+        else:
+            failed += 1
+
+    messages.info(request, f'SMS retry completed. Sent: {success}, Failed: {failed}.')
+    log_admin_action(
+        request,
+        'sms_bulk_retry',
+        'BulkSMS',
+        '',
+        {'success_count': success, 'failed_count': failed},
+    )
+    return redirect('admin_sms_dashboard')
+
+
+@login_required
+@require_perm("view_paymentwebhooks")
+def admin_payment_webhooks(request):
+    """
+    Finance/ops: inspect payment provider webhook events (reconciliation audit).
+    """
+    qs = PaymentWebhookEvent.objects.select_related(
+        "booking_group__passenger",
+        "booking_group__schedule__route",
+    ).order_by("-received_at")
+
+    status_filter = (request.GET.get("status") or "").strip().upper()
+    if status_filter in ("PENDING", "PROCESSED", "REJECTED", "FAILED"):
+        qs = qs.filter(status=status_filter)
+
+    provider_filter = (request.GET.get("provider") or "").strip().upper()
+    if provider_filter:
+        qs = qs.filter(provider__iexact=provider_filter)
+
+    stats = PaymentWebhookEvent.objects.aggregate(
+        processed=Count("id", filter=Q(status="PROCESSED")),
+        rejected=Count("id", filter=Q(status="REJECTED")),
+        failed=Count("id", filter=Q(status="FAILED")),
+        pending=Count("id", filter=Q(status="PENDING")),
+    )
+
+    paginator = Paginator(qs, 25)
+    page = request.GET.get("page")
+    events = paginator.get_page(page)
+
+    providers = (
+        PaymentWebhookEvent.objects.values_list("provider", flat=True)
+        .distinct()
+        .order_by("provider")
+    )
+
+    context = {
+        "events": events,
+        "stats": stats,
+        "status_filter": status_filter,
+        "provider_filter": provider_filter,
+        "providers": providers,
+    }
+    return render(request, "NelsaApp/admin_payment_webhooks.html", context)
+
+
+@login_required
+@require_perm("view_paymentwebhooks")
+def admin_payment_webhook_detail(request, event_pk):
+    """Full webhook payload for audit."""
+    event = get_object_or_404(
+        PaymentWebhookEvent.objects.select_related(
+            "booking_group__passenger",
+            "booking_group__schedule__route",
+        ),
+        pk=event_pk,
+    )
+    payload_pretty = json.dumps(event.payload or {}, indent=2, default=str)
+    return render(
+        request,
+        "NelsaApp/admin_payment_webhook_detail.html",
+        {"event": event, "payload_pretty": payload_pretty},
+    )
+
+
+def verify_ticket(request):
+    """
+    Public verification for signed QR ticket links (?t=...).
+    Returns JSON when Accept: application/json or ?format=json.
+    """
+    token = (request.GET.get('t') or '').strip()
+    bg_id = verify_ticket_token(token)
+    wants_json = (
+        'application/json' in (request.headers.get('Accept') or '')
+        or request.GET.get('format') == 'json'
+    )
+
+    if not bg_id:
+        err = {'valid': False, 'error': 'invalid_or_expired_ticket'}
+        if wants_json:
+            return JsonResponse(err, status=400)
+        return render(request, 'NelsaApp/ticket_verify.html', {'valid': False, 'error': err['error']})
+
+    bg = get_object_or_404(
+        BookingGroup.objects.select_related('passenger', 'schedule__route', 'schedule__bus').prefetch_related('bookings'),
+        pk=bg_id,
+    )
+    seats = sorted(bg.bookings.values_list('seat_number', flat=True))
+    data = {
+        'valid': True,
+        'booking_group_id': bg.id,
+        'status': bg.status,
+        'passenger_name': bg.passenger.name,
+        'route': f'{bg.schedule.route.start_location} → {bg.schedule.route.end_location}',
+        'departure': bg.schedule.departure_time.isoformat(),
+        'seats': seats,
+        'total_amount': str(bg.total_amount),
+        'transaction_verified': bg.transaction_verified,
+        'sms_receipt_code': bg.sms_receipt_code or '',
+    }
+    if wants_json:
+        return JsonResponse(data)
+    return render(
+        request,
+        'NelsaApp/ticket_verify.html',
+        {'valid': True, 'bg': bg, 'seats': seats, 'payload': data},
+    )
+
+
+def ticket_qr_png(request):
+    """PNG QR image encoding the absolute verify-ticket URL (requires valid signed token)."""
+    token = (request.GET.get('t') or '').strip()
+    if verify_ticket_token(token) is None:
+        return HttpResponseBadRequest('Invalid or expired ticket token.')
+
+    try:
+        import qrcode
+    except ImportError:
+        return HttpResponseBadRequest('QR generation unavailable.')
+
+    verify_url = request.build_absolute_uri(reverse('verify_ticket')) + '?' + urlencode({'t': token})
+    img = qrcode.make(verify_url, box_size=5, border=2)
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    return HttpResponse(buf.getvalue(), content_type='image/png')
+
+
+@require_GET
+def health_live(request):
+    return JsonResponse({"status": "live", "service": "nelsa"})
+
+
+@require_GET
+def health_ready(request):
+    from django.db import connection
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        return JsonResponse({"status": "ready", "database": True})
+    except Exception as exc:
+        return JsonResponse({"status": "not_ready", "database": False, "error": str(exc)}, status=503)
+
+
+def internal_metrics(request):
+    """JSON snapshot for monitoring (token or staff with webhook permission)."""
+    if request.method != "GET":
+        return HttpResponseBadRequest("Method not allowed")
+    token = (request.headers.get("X-Metrics-Token") or request.GET.get("token") or "").strip()
+    cfg = (getattr(settings, "METRICS_AUTH_TOKEN", "") or "").strip()
+    allowed = False
+    if request.user.is_authenticated and (
+        request.user.is_superuser or request.user.has_perm("NelsaApp.view_paymentwebhooks")
+    ):
+        allowed = True
+    elif cfg and token and len(cfg) == len(token) and secrets.compare_digest(token, cfg):
+        allowed = True
+    if not allowed:
+        return HttpResponseForbidden("Forbidden")
+
+    since = timezone.now() - timedelta(hours=24)
+    wq = PaymentWebhookEvent.objects.filter(received_at__gte=since)
+    bg_failed = BookingGroup.objects.filter(sms_status="FAILED").count()
+    return JsonResponse(
+        {
+            "webhooks_last_24h": {
+                "processed": wq.filter(status="PROCESSED").count(),
+                "rejected": wq.filter(status="REJECTED").count(),
+                "failed": wq.filter(status="FAILED").count(),
+                "pending": wq.filter(status="PENDING").count(),
+            },
+            "sms_failed_total": bg_failed,
+            "pending_booking_groups": BookingGroup.objects.filter(status="Pending").count(),
+            "timestamp": timezone.now().isoformat(),
+        }
+    )
+
+
+@login_required
+@require_perm("manage_refunds_rebooks")
+def admin_request_refund(request, booking_group_id):
+    if request.method != "POST":
+        return redirect("admin_booking_detail", booking_group_id=booking_group_id)
+    bg = get_object_or_404(BookingGroup, id=booking_group_id)
+    if bg.refund_status != "NONE":
+        messages.error(request, "Refund already requested or completed for this booking.")
+        return redirect("admin_booking_detail", booking_group_id=bg.id)
+    if bg.status == "Cancelled":
+        messages.error(request, "Cannot request refund for a cancelled booking.")
+        return redirect("admin_booking_detail", booking_group_id=bg.id)
+    notes = (request.POST.get("notes") or "").strip()[:4000]
+    bg.refund_status = "REQUESTED"
+    bg.refund_notes = notes or None
+    bg.refund_requested_at = timezone.now()
+    bg.save(update_fields=["refund_status", "refund_notes", "refund_requested_at"])
+    log_admin_action(
+        request,
+        "refund_requested",
+        "BookingGroup",
+        bg.id,
+        {},
+    )
+    messages.success(request, f"Refund requested for booking #{bg.id}. Complete after money is returned.")
+    return redirect("admin_booking_detail", booking_group_id=bg.id)
+
+
+@login_required
+@require_perm("manage_refunds_rebooks")
+def admin_complete_refund(request, booking_group_id):
+    if request.method != "POST":
+        return redirect("admin_booking_detail", booking_group_id=booking_group_id)
+    bg = get_object_or_404(BookingGroup, id=booking_group_id)
+    if bg.refund_status != "REQUESTED":
+        messages.error(request, "Refund must be in Requested state before completion.")
+        return redirect("admin_booking_detail", booking_group_id=bg.id)
+    pay = getattr(bg, "payment", None)
+    if pay:
+        pay.status = "REFUNDED"
+        d = dict(pay.payment_details or {})
+        d["manual_refund_completed_at"] = timezone.now().isoformat()
+        pay.payment_details = d
+        pay.save(update_fields=["status", "payment_details"])
+    bg.refund_status = "COMPLETED"
+    bg.refund_completed_at = timezone.now()
+    bg.bookings.update(status="Cancelled")
+    bg.status = "Cancelled"
+    bg.save(update_fields=["refund_status", "refund_completed_at", "status"])
+    log_admin_action(request, "refund_completed", "BookingGroup", bg.id, {})
+    messages.success(request, f"Refund marked complete and booking #{bg.id} cancelled.")
+    return redirect("admin_booking_detail", booking_group_id=bg.id)
+
+
+@login_required
+@require_perm("manage_refunds_rebooks")
+def admin_rebook_booking(request, booking_group_id):
+    old = get_object_or_404(
+        BookingGroup.objects.select_related("passenger", "schedule__route", "schedule__bus", "payment").prefetch_related(
+            "bookings"
+        ),
+        id=booking_group_id,
+    )
+    if old.status == "Cancelled":
+        messages.error(request, "Cannot rebook from a cancelled group.")
+        return redirect("admin_booking_detail", booking_group_id=old.id)
+    if old.refund_status == "COMPLETED":
+        messages.error(request, "This booking was refunded; create a new passenger booking instead.")
+        return redirect("admin_booking_detail", booking_group_id=old.id)
+
+    if request.method == "GET":
+        schedules = (
+            Schedule.objects.filter(departure_time__gte=timezone.now(), is_available=True)
+            .select_related("route", "bus")
+            .order_by("departure_time")[:500]
+        )
+        return render(
+            request,
+            "NelsaApp/admin_rebook.html",
+            {"old": old, "schedules": schedules, "seat_count": old.bookings.count()},
+        )
+
+    raw_seats = (request.POST.get("seat_numbers") or "").replace(",", " ")
+    try:
+        seat_ids = sorted({int(x) for x in raw_seats.split() if x.strip()})
+    except ValueError:
+        messages.error(request, "Invalid seat numbers.")
+        return redirect("admin_rebook_booking", booking_group_id=old.id)
+
+    schedule_id = request.POST.get("schedule_id")
+    if not schedule_id:
+        messages.error(request, "Select a schedule.")
+        return redirect("admin_rebook_booking", booking_group_id=old.id)
+
+    need = old.bookings.count()
+    if len(seat_ids) != need:
+        messages.error(request, f"Enter exactly {need} seat numbers (same count as original booking).")
+        return redirect("admin_rebook_booking", booking_group_id=old.id)
+
+    schedule = get_object_or_404(Schedule, id=int(schedule_id))
+
+    bus_seats = Seat.objects.filter(bus=schedule.bus)
+    max_seat = bus_seats.count() if bus_seats.exists() else (schedule.bus.capacity or 0)
+    if max_seat <= 0:
+        max_seat = 40
+    if any(s > max_seat or s < 1 for s in seat_ids):
+        messages.error(request, "One or more seat numbers are invalid for this bus.")
+        return redirect("admin_rebook_booking", booking_group_id=old.id)
+
+    pm = "MOMO"
+    if getattr(old, "payment", None):
+        pm = old.payment.payment_method
+
+    try:
+        with transaction.atomic():
+            locked_old = BookingGroup.objects.select_for_update().get(pk=old.pk)
+            if locked_old.status == "Cancelled":
+                raise ValueError("Booking was cancelled concurrently.")
+            existing = Booking.objects.filter(schedule=schedule, seat_number__in=seat_ids).exists()
+            if existing:
+                raise ValueError("One or more seats are no longer available.")
+
+            total_amount = schedule.price * len(seat_ids)
+            new_bg = BookingGroup.objects.create(
+                passenger=locked_old.passenger,
+                schedule=schedule,
+                total_amount=total_amount,
+                status="Pending",
+                rebooking_of=locked_old,
+                payment_waived=True,
+                transaction_verified=True,
+                transaction_id=f"REBOOK-{locked_old.id}",
+                admin_notes=f"Rebook from booking group #{locked_old.id}.",
+            )
+            for sn in seat_ids:
+                Booking.objects.create(
+                    passenger=locked_old.passenger,
+                    schedule=schedule,
+                    seat_number=sn,
+                    status="Pending",
+                    booking_group=new_bg,
+                )
+            Payment.objects.create(
+                booking_group=new_bg,
+                amount=Decimal("0"),
+                payment_method=pm,
+                transaction_id=f"REBOOK-{locked_old.id}",
+                status="COMPLETED",
+                payment_details={"rebook_from": locked_old.id, "waived": True},
+            )
+
+            locked_old.bookings.update(status="Cancelled")
+            locked_old.status = "Cancelled"
+            note = (locked_old.admin_notes or "") + f"\nRebooked to new group #{new_bg.id}."
+            locked_old.admin_notes = note.strip()
+            locked_old.save(update_fields=["status", "admin_notes"])
+
+        log_admin_action(
+            request,
+            "rebook_created",
+            "BookingGroup",
+            new_bg.id,
+            {"from_group": old.id, "schedule_id": schedule.id},
+        )
+        messages.success(
+            request,
+            f"Rebook created: group #{new_bg.id}. Confirm it in booking list when ready.",
+        )
+        return redirect("admin_booking_detail", booking_group_id=new_bg.id)
+    except Exception as exc:
+        messages.error(request, str(exc))
+        return redirect("admin_rebook_booking", booking_group_id=old.id)
+
+
+@login_required
+@require_perm("view_adminauditlog")
+def admin_audit_log_view(request):
+    """Staff: recent privileged actions (confirm/cancel, price edits, etc.)."""
+    qs = AdminAuditLog.objects.select_related('user').order_by('-created_at')
+    action_filter = (request.GET.get('action') or '').strip()
+    if action_filter:
+        qs = qs.filter(action__icontains=action_filter)
+    paginator = Paginator(qs, 40)
+    page = request.GET.get('page')
+    entries = paginator.get_page(page)
+    return render(
+        request,
+        'NelsaApp/admin_audit_log.html',
+        {'entries': entries, 'action_filter': action_filter},
+    )
+
+
+@login_required
+@require_perm("cancel_bookinggroup")
 def admin_cancel_booking(request, booking_group_id):
     """Admin view to cancel a booking group."""
-    if not request.user.is_staff:
-        return redirect('index')
-    
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
     
     if booking_group.status != 'Cancelled':
+        prev = booking_group.status
         # Update booking status
         booking_group.bookings.update(status='Cancelled')
         booking_group.status = 'Cancelled'
         booking_group.save()
         
-        # SMS functionality disabled
         messages.success(request, f'Booking Group #{booking_group.id} has been cancelled.')
+        log_admin_action(
+            request,
+            'booking_cancel',
+            'BookingGroup',
+            booking_group.id,
+            {'previous_status': prev},
+        )
     else:
         messages.error(request, f'Booking Group #{booking_group.id} is already cancelled.')
     
@@ -644,7 +1290,7 @@ def user_profile(request):
     date_filter = request.GET.get('date', '')
     
     # Get the user's booking groups
-    booking_groups = BookingGroup.objects.filter(passenger__email=request.user.email)
+    booking_groups = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user))
     
     # Apply search filter
     if search_query:
@@ -676,10 +1322,10 @@ def user_profile(request):
     booking_groups = paginator.get_page(page)
     
     # Get booking statistics for the user
-    total_bookings = BookingGroup.objects.filter(passenger__email=request.user.email).count()
-    confirmed_bookings = BookingGroup.objects.filter(passenger__email=request.user.email, status='Confirmed').count()
-    pending_bookings = BookingGroup.objects.filter(passenger__email=request.user.email, status='Pending').count()
-    cancelled_bookings = BookingGroup.objects.filter(passenger__email=request.user.email, status='Cancelled').count()
+    total_bookings = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user)).count()
+    confirmed_bookings = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user), status='Confirmed').count()
+    pending_bookings = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user), status='Pending').count()
+    cancelled_bookings = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user), status='Cancelled').count()
     
     context = {
         'booking_groups': booking_groups,
@@ -697,20 +1343,41 @@ def user_profile(request):
 @login_required
 def profile_edit(request):
     """View for editing user profile information."""
-    # Get the user's passenger profile or create one if it doesn't exist
-    passenger, created = Passenger.objects.get_or_create(
-        email=request.user.email,
-        defaults={
-            'name': request.user.get_full_name() or request.user.username,
-            'phone': ''
-        }
-    )
+    passenger_email = _passenger_email_for_user(request.user)
+    passenger = Passenger.objects.filter(email=passenger_email).first()
+
+    if passenger is None:
+        # Don't create a DB row with an empty/invalid phone.
+        passenger = Passenger(
+            email=passenger_email,
+            name=request.user.get_full_name() or request.user.username,
+            phone="",
+        )
     
     if request.method == 'POST':
-        # Update passenger information
-        passenger.name = request.POST.get('name', passenger.name)
-        passenger.phone = request.POST.get('phone', passenger.phone)
-        passenger.save()
+        name = (request.POST.get('name', passenger.name) or '').strip()
+        phone_raw = request.POST.get('phone', passenger.phone)
+        phone = normalize_cameroon_phone(phone_raw)
+
+        if not name:
+            messages.error(request, "Full Name is required.")
+            return render(request, 'NelsaApp/profile_edit.html', {'passenger': passenger, 'user': request.user})
+
+        if not phone:
+            messages.error(request, "Phone number must start with +237 and be followed by 8-9 digits (example: +237699123456).")
+            return render(request, 'NelsaApp/profile_edit.html', {'passenger': passenger, 'user': request.user})
+
+        try:
+            Passenger.objects.update_or_create(
+                email=passenger_email,
+                defaults={
+                    'name': name,
+                    'phone': phone,
+                },
+            )
+        except IntegrityError:
+            messages.error(request, "That phone number is already used by another passenger. Please use a different number.")
+            return render(request, 'NelsaApp/profile_edit.html', {'passenger': passenger, 'user': request.user})
         
         # Update user information
         user = request.user
@@ -799,7 +1466,7 @@ def services_page(request):
     return render(request, 'NelsaApp/services.html')
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("access_admin_bookings")
 def fix_duplicate_passengers(request):
     """Fix passengers with duplicate or generic names."""
     if request.method == 'POST':
@@ -841,7 +1508,7 @@ def fix_duplicate_passengers(request):
     return render(request, 'NelsaApp/fix_passengers.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_staff_users")
 def admin_users(request):
     # Handle user actions
     if request.method == 'POST':
@@ -926,14 +1593,14 @@ def admin_users(request):
     return render(request, 'NelsaApp/admin_users.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_staff_users")
 def admin_user_detail(request, user_id):
     """View detailed information about a specific user."""
     user = get_object_or_404(User, id=user_id)
     
     # Get user's bookings
     try:
-        passenger = Passenger.objects.get(email=user.email)
+        passenger = Passenger.objects.get(email=_passenger_email_for_user(user))
         bookings = Booking.objects.filter(passenger=passenger).select_related('schedule', 'schedule__bus', 'schedule__route').order_by('-booking_date')
     except Passenger.DoesNotExist:
         bookings = []
@@ -956,7 +1623,7 @@ def admin_user_detail(request, user_id):
 @login_required
 def payment_page(request, booking_group_id):
     """View for selecting payment method for a group of bookings."""
-    booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=request.user.email)
+    booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=_passenger_email_for_user(request.user))
     
     # Check if booking group already has a payment
     if hasattr(booking_group, 'payment') and booking_group.payment.status == 'COMPLETED':
@@ -968,7 +1635,7 @@ def payment_page(request, booking_group_id):
 @login_required
 def process_payment(request, payment_method, booking_group_id):
     """View for processing payment with the selected method for a group of bookings."""
-    booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=request.user.email)
+    booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=_passenger_email_for_user(request.user))
     
     # Check if booking group already has a payment
     if hasattr(booking_group, 'payment') and booking_group.payment.status == 'COMPLETED':
@@ -988,7 +1655,7 @@ def process_payment(request, payment_method, booking_group_id):
 
 @login_required
 def verify_payment(request):
-    """API endpoint to verify payment for a booking group."""
+    """User submits payment proof; final verification is done by provider webhook."""
     if request.method != 'POST':
         return JsonResponse({'success': False, 'message': 'Invalid request method'})
     
@@ -1001,45 +1668,328 @@ def verify_payment(request):
         if not all([booking_group_id, payment_method, transaction_id]):
             return JsonResponse({'success': False, 'message': 'Missing required data'})
         
-        booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=request.user.email)
-        
-        # In a real application, you would verify the transaction with the payment provider
-        # For this demo, we'll just create a payment record
+        booking_group = get_object_or_404(
+            BookingGroup,
+            id=booking_group_id,
+            passenger__email=_passenger_email_for_user(request.user),
+        )
+
+        # Only admin can confirm a booking (booking remains Pending after payment verification).
+        if booking_group.status != 'Pending':
+            return JsonResponse(
+                {'success': False, 'message': 'This booking is not pending confirmation.'},
+                status=400,
+            )
+
+        # User-side submission only: payment remains pending until webhook confirmation.
         payment, created = Payment.objects.get_or_create(
             booking_group=booking_group,
             defaults={
                 'amount': booking_group.total_amount,
                 'payment_method': payment_method,
                 'transaction_id': transaction_id,
-                'status': 'COMPLETED',
+                'status': 'PENDING',
                 'payment_details': {
-                    'verified_at': timezone.now().isoformat(),
-                    'verified_by': request.user.username
+                    'submitted_at': timezone.now().isoformat(),
+                    'submitted_by': request.user.username
                 }
             }
         )
         
         if not created:
             payment.transaction_id = transaction_id
-            payment.status = 'COMPLETED'
+            payment.status = 'PENDING'
             payment.payment_details = {
-                'verified_at': timezone.now().isoformat(),
-                'verified_by': request.user.username
+                'submitted_at': timezone.now().isoformat(),
+                'submitted_by': request.user.username
             }
             payment.save()
         
-        # Update all bookings in the group to confirmed
-        booking_group.bookings.update(status='Confirmed')
-        booking_group.status = 'Confirmed'
-        booking_group.save()
-        
-        return JsonResponse({'success': True, 'message': 'Payment verified successfully'})
+        # Store transaction reference, wait for provider webhook to set transaction_verified=True.
+        booking_group.transaction_id = transaction_id
+        booking_group.transaction_verified = False
+        booking_group.status = 'Pending'
+        booking_group.save(update_fields=['transaction_id', 'transaction_verified', 'status'])
+
+        return JsonResponse(
+            {
+                'success': True,
+                'message': 'Payment submitted. Awaiting secure provider verification.',
+            }
+        )
     
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)})
 
+
+def _verify_payment_webhook_hmac(request, raw_body: bytes) -> bool:
+    secret = (getattr(settings, "PAYMENT_WEBHOOK_HMAC_SECRET", "") or "").strip()
+    if not secret:
+        return True
+    sig = (request.headers.get("X-Webhook-Body-Signature") or "").strip()
+    if not sig:
+        return False
+    digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    return secrets.compare_digest(digest, sig)
+
+
+@csrf_exempt
+def payment_webhook(request):
+    """
+    Payment provider webhook: payment capture + refund reconciliation.
+
+    Shared secret: header X-Payment-Webhook-Secret (required).
+    Optional body HMAC (hex): set PAYMENT_WEBHOOK_HMAC_SECRET and send X-Webhook-Body-Signature.
+
+    Payment payload (example): event_id, booking_group_id, payment_method, transaction_id,
+    status in (COMPLETED, SUCCESS), amount matching BookingGroup.total_amount.
+
+    Refund payload: event_kind=refund (or status REFUNDED/REFUND/REFUND_COMPLETED), booking_group_id,
+    optional transaction_id (refund reference).
+    """
+    if request.method != "POST":
+        return JsonResponse({"success": False, "message": "Invalid request method"}, status=405)
+
+    raw_body = request.body or b""
+    webhook_secret = (getattr(settings, "PAYMENT_WEBHOOK_SECRET", "") or "").strip()
+    received_secret = (request.headers.get("X-Payment-Webhook-Secret", "") or "").strip()
+
+    if not webhook_secret:
+        return JsonResponse({"success": False, "message": "Webhook secret not configured"}, status=500)
+    if not received_secret or not secrets.compare_digest(received_secret, webhook_secret):
+        return JsonResponse({"success": False, "message": "Unauthorized webhook"}, status=401)
+    if not _verify_payment_webhook_hmac(request, raw_body):
+        return JsonResponse({"success": False, "message": "Invalid body signature"}, status=401)
+
+    try:
+        payload = json.loads(raw_body or b"{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "message": "Invalid JSON payload"}, status=400)
+
+    event_id = str(payload.get("event_id") or "").strip()
+    provider = str(payload.get("provider") or "GENERIC").strip().upper()
+    booking_group_id = payload.get("booking_group_id")
+    transaction_id = str(payload.get("transaction_id") or "").strip()
+    payment_method = str(payload.get("payment_method") or "").strip().upper()
+    provider_status = str(payload.get("status") or "").strip().upper()
+    amount_raw = payload.get("amount")
+
+    if not event_id:
+        return JsonResponse({"success": False, "message": "Missing event_id"}, status=400)
+
+    event_kind_raw = (payload.get("event_kind") or payload.get("type") or "").strip().lower()
+    refund_statuses = ("REFUNDED", "REFUND", "REFUND_COMPLETED")
+    if provider_status in refund_statuses:
+        event_kind = "refund"
+    elif event_kind_raw in ("refund", "payment.refund"):
+        event_kind = "refund"
+    elif event_kind_raw in ("payment", "payment.succeeded", "charge.succeeded", ""):
+        event_kind = "payment"
+    else:
+        event_kind = "payment"
+
+    event, created = PaymentWebhookEvent.objects.get_or_create(
+        event_id=event_id,
+        defaults={
+            "provider": provider,
+            "transaction_id": transaction_id or None,
+            "payload": payload,
+            "signature": received_secret,
+            "status": "PENDING",
+            "event_kind": event_kind,
+        },
+    )
+
+    if not created and event.processed:
+        return JsonResponse({"success": True, "message": "Event already processed"})
+
+    event.payload = payload
+    event.provider = provider
+    event.signature = received_secret
+    event.transaction_id = transaction_id or event.transaction_id
+    event.event_kind = event_kind
+    event.save(update_fields=["payload", "provider", "signature", "transaction_id", "event_kind"])
+
+    try:
+        if not booking_group_id:
+            raise ValueError("Missing booking_group_id")
+
+        if event_kind == "refund":
+            booking_group = BookingGroup.objects.select_related("payment").get(id=booking_group_id)
+            event.booking_group = booking_group
+            pay = getattr(booking_group, "payment", None)
+            if pay:
+                pay.status = "REFUNDED"
+                details = dict(pay.payment_details or {})
+                details.update(
+                    {
+                        "refund_webhook_event_id": event_id,
+                        "refund_provider": provider,
+                        "refunded_at": timezone.now().isoformat(),
+                    }
+                )
+                pay.payment_details = details
+                if transaction_id:
+                    pay.transaction_id = transaction_id
+                pay.save()
+            booking_group.refund_status = "COMPLETED"
+            booking_group.refund_completed_at = timezone.now()
+            booking_group.bookings.update(status="Cancelled")
+            booking_group.status = "Cancelled"
+            booking_group.save(
+                update_fields=[
+                    "refund_status",
+                    "refund_completed_at",
+                    "status",
+                ]
+            )
+            event.processed = True
+            event.status = "PROCESSED"
+            event.error_message = None
+            event.processed_at = timezone.now()
+            event.save(
+                update_fields=[
+                    "booking_group",
+                    "processed",
+                    "status",
+                    "error_message",
+                    "processed_at",
+                ]
+            )
+            return JsonResponse({"success": True, "message": "Refund webhook processed"})
+
+        if not payment_method:
+            raise ValueError("Missing payment_method")
+        if not transaction_id:
+            raise ValueError("Missing transaction_id")
+        if provider_status not in ("COMPLETED", "SUCCESS"):
+            raise ValueError(f"Payment status not successful: {provider_status or 'UNKNOWN'}")
+
+        try:
+            amount = Decimal(str(amount_raw))
+        except (InvalidOperation, TypeError):
+            raise ValueError("Invalid amount in webhook payload")
+
+        booking_group = BookingGroup.objects.select_related("payment").get(id=booking_group_id)
+        event.booking_group = booking_group
+
+        expected_amount = Decimal(str(booking_group.total_amount))
+        if amount != expected_amount:
+            raise ValueError(f"Amount mismatch. Expected {expected_amount}, got {amount}")
+
+        valid_methods = [m[0] for m in Payment.PAYMENT_METHODS]
+        if payment_method not in valid_methods:
+            raise ValueError("Invalid payment_method")
+
+        payment, _ = Payment.objects.get_or_create(
+            booking_group=booking_group,
+            defaults={
+                "amount": booking_group.total_amount,
+                "payment_method": payment_method,
+                "transaction_id": transaction_id,
+                "status": "COMPLETED",
+                "payment_details": {
+                    "webhook_event_id": event_id,
+                    "provider": provider,
+                    "verified_at": timezone.now().isoformat(),
+                    "verified_by": "webhook",
+                },
+            },
+        )
+
+        payment.amount = booking_group.total_amount
+        payment.payment_method = payment_method
+        payment.transaction_id = transaction_id
+        payment.status = "COMPLETED"
+        payment.payment_details = {
+            "webhook_event_id": event_id,
+            "provider": provider,
+            "verified_at": timezone.now().isoformat(),
+            "verified_by": "webhook",
+        }
+        payment.save()
+
+        booking_group.transaction_id = transaction_id
+        booking_group.transaction_verified = True
+        booking_group.verified_at = timezone.now()
+        booking_group.save(update_fields=["transaction_id", "transaction_verified", "verified_at"])
+
+        event.processed = True
+        event.status = "PROCESSED"
+        event.error_message = None
+        event.processed_at = timezone.now()
+        event.save(update_fields=["booking_group", "processed", "status", "error_message", "processed_at"])
+
+        return JsonResponse({"success": True, "message": "Webhook processed"})
+
+    except BookingGroup.DoesNotExist:
+        event.processed = False
+        event.status = "FAILED"
+        event.error_message = "Booking group not found"
+        event.processed_at = timezone.now()
+        event.save(update_fields=["processed", "status", "error_message", "processed_at"])
+        return JsonResponse({"success": False, "message": "Booking group not found"}, status=404)
+    except Exception as exc:
+        event.processed = False
+        event.status = "REJECTED"
+        event.error_message = str(exc)
+        event.processed_at = timezone.now()
+        event.save(update_fields=["processed", "status", "error_message", "processed_at"])
+        if getattr(settings, "ALERT_ON_WEBHOOK_FAILURE", False):
+            send_ops_alert(
+                "Payment webhook rejected",
+                f"event_id={event_id}\nerror={exc}\n",
+            )
+        return JsonResponse({"success": False, "message": str(exc)}, status=400)
+
+
+def verify_sms_receipt(request, code: str):
+    """
+    Park-staff verification endpoint.
+
+    Input: SMS receipt code sent to the passenger after admin confirmation.
+    Output: whether the code is valid for a confirmed booking group.
+    """
+    receipt_code = (code or "").strip()
+    if not receipt_code:
+        return JsonResponse({'valid': False, 'message': 'Missing receipt code'}, status=400)
+
+    booking_group = (
+        BookingGroup.objects.select_related("passenger", "schedule__bus", "schedule__route")
+        .prefetch_related("bookings")
+        .filter(sms_receipt_code=receipt_code, status="Confirmed")
+        .first()
+    )
+
+    if not booking_group:
+        return JsonResponse({'valid': False, 'message': 'Invalid or not confirmed'}, status=404)
+
+    seats = sorted(booking_group.bookings.values_list("seat_number", flat=True))
+    departure_local = timezone.localtime(booking_group.schedule.departure_time)
+
+    company = getattr(settings, "COMPANY_NAME", "MOGHAMO EXPRESS")
+
+    return JsonResponse(
+        {
+            'valid': True,
+            'company': company,
+            'booking_group_id': booking_group.id,
+            'passenger_name': booking_group.passenger.name,
+            'route': f"{booking_group.schedule.route.start_location} -> {booking_group.schedule.route.end_location}",
+            'bus_type': booking_group.schedule.bus.bus_type,
+            'seats': seats,
+            'departure': departure_local.strftime("%Y-%m-%d %H:%M"),
+            'sms_receipt_code': booking_group.sms_receipt_code,
+        }
+    )
+
+
+def sms_receipt_verify_page(request):
+    """Public page for park staff to verify SMS receipt codes."""
+    return render(request, 'NelsaApp/sms_receipt_verify.html')
+
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("access_admin_bookings")
 def admin_reports(request):
     """Admin view for generating and viewing system reports."""
     # Get report type and date range from request
@@ -1114,7 +2064,7 @@ def generate_user_report(from_date=None, to_date=None):
     top_users = []
     for user in users[:10]:  # Top 10 users
         try:
-            passenger = Passenger.objects.get(email=user.email)
+            passenger = Passenger.objects.get(email=_passenger_email_for_user(user))
             booking_count = Booking.objects.filter(passenger=passenger).count()
             if booking_count > 0:
                 top_users.append({
@@ -1359,7 +2309,7 @@ def generate_bus_report(from_date=None, to_date=None):
     }
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_buses(request):
     """Admin view for managing buses."""
     # Handle bus actions
@@ -1444,7 +2394,7 @@ def admin_buses(request):
     return render(request, 'NelsaApp/admin_buses.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_bus_detail(request, bus_id):
     """View detailed information about a specific bus."""
     bus = get_object_or_404(Bus, id=bus_id)
@@ -1480,7 +2430,7 @@ def admin_bus_detail(request, bus_id):
     return render(request, 'NelsaApp/admin_bus_detail.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_bus_add(request):
     """Add a new bus."""
     if request.method == 'POST':
@@ -1518,7 +2468,7 @@ def admin_bus_add(request):
     return render(request, 'NelsaApp/admin_bus_add.html')
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_bus_edit(request, bus_id):
     """Edit an existing bus."""
     bus = get_object_or_404(Bus, id=bus_id)
@@ -1561,7 +2511,7 @@ def admin_bus_edit(request, bus_id):
     return render(request, 'NelsaApp/admin_bus_edit.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_routes(request):
     """Admin view for managing routes and their prices."""
     # Handle route actions
@@ -1575,8 +2525,17 @@ def admin_routes(request):
                 if action == 'delete':
                     # Check if route has any schedules
                     if not Schedule.objects.filter(route=route).exists():
+                        rid = route.id
+                        label = f'{route.start_location} → {route.end_location}'
                         route.delete()
-                        messages.success(request, f'Route {route.start_location} → {route.end_location} has been deleted.')
+                        messages.success(request, f'Route {label} has been deleted.')
+                        log_admin_action(
+                            request,
+                            'route_delete',
+                            'Route',
+                            rid,
+                            {'label': label},
+                        )
                     else:
                         messages.error(request, f'Cannot delete route - it has associated schedules.')
             except Route.DoesNotExist:
@@ -1640,7 +2599,7 @@ def admin_routes(request):
     return render(request, 'NelsaApp/admin_routes.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_route_detail(request, route_id):
     """View detailed information about a specific route."""
     route = get_object_or_404(Route, id=route_id)
@@ -1680,7 +2639,7 @@ def admin_route_detail(request, route_id):
     return render(request, 'NelsaApp/admin_route_detail.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_route_add(request):
     """Add a new route."""
     if request.method == 'POST':
@@ -1715,6 +2674,17 @@ def admin_route_add(request):
                             price=price
                         )
                         messages.success(request, f'Route from {start_location} to {end_location} has been added successfully. All schedules will use the route base price.')
+                        log_admin_action(
+                            request,
+                            'route_add',
+                            'Route',
+                            route.id,
+                            {
+                                'start_location': start_location,
+                                'end_location': end_location,
+                                'price': price,
+                            },
+                        )
                         return redirect('admin_routes')
             except ValueError:
                 messages.error(request, 'Distance, duration, and price must be valid numbers.')
@@ -1722,11 +2692,11 @@ def admin_route_add(request):
     return render(request, 'NelsaApp/admin_route_add.html')
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_route_edit(request, route_id):
     """Edit an existing route."""
     route = get_object_or_404(Route, id=route_id)
-    
+
     if request.method == 'POST':
         start_location = request.POST.get('start_location')
         end_location = request.POST.get('end_location')
@@ -1768,6 +2738,20 @@ def admin_route_edit(request, route_id):
                             messages.success(request, f'Route from {start_location} to {end_location} has been updated successfully. {updated_schedules} schedule(s) have been updated with the new price.')
                         else:
                             messages.success(request, f'Route from {start_location} to {end_location} has been updated successfully.')
+                        log_admin_action(
+                            request,
+                            'route_edit',
+                            'Route',
+                            route.id,
+                            {
+                                'old_price': str(old_price),
+                                'new_price': str(price),
+                                'price_changed': price_changed,
+                                'schedules_affected': updated_schedules,
+                                'start_location': start_location,
+                                'end_location': end_location,
+                            },
+                        )
                         
                         return redirect('admin_routes')
             except ValueError:
@@ -1780,7 +2764,7 @@ def admin_route_edit(request, route_id):
     return render(request, 'NelsaApp/admin_route_edit.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("manage_routes_schedules")
 def admin_schedules(request):
     """Admin view for managing schedules and their prices."""
     # Handle schedule actions
@@ -1790,20 +2774,44 @@ def admin_schedules(request):
         
         if action and schedule_id:
             try:
-                schedule = Schedule.objects.get(id=schedule_id)
+                schedule = Schedule.objects.select_related('bus', 'route').get(id=schedule_id)
                 if action == 'activate':
                     schedule.is_available = True
                     schedule.save()
                     messages.success(request, f'Schedule {schedule.bus.bus_number} - {schedule.route} has been activated.')
+                    log_admin_action(
+                        request,
+                        'schedule_activate',
+                        'Schedule',
+                        schedule.id,
+                        {'price': str(schedule.price), 'route': str(schedule.route)},
+                    )
                 elif action == 'deactivate':
                     schedule.is_available = False
                     schedule.save()
                     messages.success(request, f'Schedule {schedule.bus.bus_number} - {schedule.route} has been deactivated.')
+                    log_admin_action(
+                        request,
+                        'schedule_deactivate',
+                        'Schedule',
+                        schedule.id,
+                        {'price': str(schedule.price), 'route': str(schedule.route)},
+                    )
                 elif action == 'delete':
                     # Check if schedule has any bookings
                     if not Booking.objects.filter(schedule=schedule).exists():
+                        sid = schedule.id
+                        price = str(schedule.price)
+                        rlabel = str(schedule.route)
                         schedule.delete()
                         messages.success(request, f'Schedule has been deleted.')
+                        log_admin_action(
+                            request,
+                            'schedule_delete',
+                            'Schedule',
+                            sid,
+                            {'price': price, 'route': rlabel},
+                        )
                     else:
                         messages.error(request, f'Cannot delete schedule - it has associated bookings.')
             except Schedule.DoesNotExist:
@@ -1872,7 +2880,7 @@ def admin_schedules(request):
     return render(request, 'NelsaApp/admin_schedules.html', context)
 
 @login_required
-@user_passes_test(lambda u: u.is_staff)
+@require_perm("access_admin_bookings")
 def admin_support(request):
     """Enhanced admin support view with filtering and search."""
     from .models import Support
@@ -1929,7 +2937,7 @@ def admin_support(request):
 #Best regards,
 #MOGHAMO EXPRESS Support Team
 #support@moghamoexpress.com
-#+237 682777850
+#+237675315422
 
 #---
 #This is a plain text email that can be read by any email client.
