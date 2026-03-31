@@ -168,6 +168,12 @@ PUBLIC_SITE_URL = os.environ.get('PUBLIC_SITE_URL', 'http://127.0.0.1:8000').rst
 PAYMENT_WEBHOOK_SECRET = os.environ.get('PAYMENT_WEBHOOK_SECRET', '')
 # Optional HMAC of raw body (hex) — header X-Webhook-Body-Signature
 PAYMENT_WEBHOOK_HMAC_SECRET = os.environ.get('PAYMENT_WEBHOOK_HMAC_SECRET', '')
+PAYMENT_WEBHOOK_MAX_SKEW_SECONDS = int(os.environ.get('PAYMENT_WEBHOOK_MAX_SKEW_SECONDS', '300'))
+PAYMENT_WEBHOOK_MAX_RETRIES = int(os.environ.get('PAYMENT_WEBHOOK_MAX_RETRIES', '3'))
+
+# Provider-specific webhook signatures (optional, based on provider)
+PAYSTACK_WEBHOOK_SECRET = os.environ.get('PAYSTACK_WEBHOOK_SECRET', '')
+FLUTTERWAVE_WEBHOOK_HASH = os.environ.get('FLUTTERWAVE_WEBHOOK_HASH', '')
 
 # Ops alerts (comma-separated emails) + webhook failure emails
 ALERT_EMAIL_RECIPIENTS = [

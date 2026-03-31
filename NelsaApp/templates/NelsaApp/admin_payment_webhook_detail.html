@@ -33,6 +33,15 @@
             <div class="md:col-span-2"><dt class="text-gray-500">Error</dt><dd class="text-red-600 whitespace-pre-wrap">{{ event.error_message }}</dd></div>
             {% endif %}
         </dl>
+        {% if not event.processed and not event.dead_lettered %}
+        <form method="post" action="{% url 'admin_retry_payment_webhook' event.pk %}" onsubmit="return confirm('Retry processing this webhook event now?')">
+            {% csrf_token %}
+            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">Retry Processing</button>
+            <span class="text-xs text-gray-500 ml-2">Retries: {{ event.retry_count|default:0 }}</span>
+        </form>
+        {% elif event.dead_lettered %}
+        <p class="text-sm text-red-700">This event is dead-lettered after max retries. Inspect payload and process manually if needed.</p>
+        {% endif %}
 
         <div>
             <h2 class="font-semibold text-gray-800 mb-2">Raw payload</h2>

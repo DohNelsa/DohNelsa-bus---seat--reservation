@@ -47,6 +47,7 @@ urlpatterns = [
     path('admin-sms/retry-all-failed/', views.admin_sms_retry_all_failed, name='admin_sms_retry_all_failed'),
     path('admin-payment-webhooks/', views.admin_payment_webhooks, name='admin_payment_webhooks'),
     path('admin-payment-webhooks/<int:event_pk>/', views.admin_payment_webhook_detail, name='admin_payment_webhook_detail'),
+    path('admin-payment-webhooks/<int:event_pk>/retry/', views.admin_retry_payment_webhook, name='admin_retry_payment_webhook'),
     path('manage-reports/', views.admin_reports, name='admin_reports'),
     path('payment/<int:booking_group_id>/', views.payment_page, name='payment'),
     path('process-payment/<str:payment_method>/<int:booking_group_id>/', views.process_payment, name='process_payment'),

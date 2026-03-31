@@ -362,6 +362,9 @@ class PaymentWebhookEvent(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     processed = models.BooleanField(default=False)
     error_message = models.TextField(blank=True, null=True)
+    retry_count = models.PositiveIntegerField(default=0)
+    last_retry_at = models.DateTimeField(blank=True, null=True)
+    dead_lettered = models.BooleanField(default=False)
     received_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(blank=True, null=True)
 
@@ -370,6 +373,55 @@ class PaymentWebhookEvent(models.Model):
 
     def __str__(self):
         return f"{self.provider} event {self.event_id} ({self.status})"
+
+
+class PaymentWebhookNonce(models.Model):
+    """
+    Replay protection store for webhook nonces.
+    """
+
+    nonce = models.CharField(max_length=120, unique=True)
+    received_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    provider = models.CharField(max_length=40, default="GENERIC")
+
+    class Meta:
+        ordering = ["-received_at"]
+
+    def __str__(self):
+        return f"{self.provider}:{self.nonce}"
+
+
+class NotificationJob(models.Model):
+    """
+    Small DB-backed async queue for SMS/email side effects.
+    """
+
+    JOB_TYPES = [
+        ("BOOKING_CONFIRMED_SMS", "Booking confirmed SMS"),
+        ("BOOKING_CONFIRMED_EMAIL", "Booking confirmed email"),
+    ]
+    STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("PROCESSING", "Processing"),
+        ("DONE", "Done"),
+        ("FAILED", "Failed"),
+    ]
+
+    booking_group = models.ForeignKey(BookingGroup, on_delete=models.CASCADE, related_name="notification_jobs")
+    job_type = models.CharField(max_length=40, choices=JOB_TYPES, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING", db_index=True)
+    retry_count = models.PositiveIntegerField(default=0)
+    payload = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True, null=True)
+    run_after = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["run_after", "id"]
+
+    def __str__(self):
+        return f"{self.job_type} bg={self.booking_group_id} {self.status}"
 
 
 class AdminAuditLog(models.Model):

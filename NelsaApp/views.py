@@ -8,14 +8,17 @@ from django.contrib import messages
 from .forms import BookingForm
 
 from django.contrib.auth.decorators import login_required
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from .models import (
     AdminAuditLog,
     Booking,
     BookingGroup,
     Bus,
+    NotificationJob,
     Passenger,
     Payment,
+    PaymentWebhookEvent,
+    PaymentWebhookNonce,
     Route,
     Schedule,
     Seat,
@@ -44,11 +47,11 @@ import os
 
 from .notifications import send_booking_confirmed_email
 from .sms import send_booking_confirmed_sms
-from .models import PaymentWebhookEvent
 import hashlib
 import hmac
 
 from .audit import log_admin_action
+from .jobs import enqueue_notification_job
 from .monitoring import send_ops_alert
 from .rbac import require_admin_portal, require_perm, user_has_perm
 from .tickets import sign_booking_group_ticket, verify_ticket_token
@@ -747,6 +750,7 @@ def admin_booking_detail(request, booking_group_id):
 
 @login_required
 @require_perm("confirm_bookinggroup")
+@require_POST
 def admin_confirm_booking(request, booking_group_id):
     """Admin view to confirm a booking group only if transaction is verified."""
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
@@ -766,21 +770,18 @@ def admin_confirm_booking(request, booking_group_id):
         booking_group.verified_at = timezone.now()
         booking_group.save()
 
-        send_booking_confirmed_email(booking_group, source='admin')
-        sms_ok = send_booking_confirmed_sms(booking_group, source='admin')
-
-        if sms_ok:
-            messages.success(request, f'Booking Group #{booking_group.id} confirmed. SMS receipt sent successfully.')
-        else:
-            booking_group.refresh_from_db()
-            sms_error = booking_group.sms_error_message or 'SMS send failed for unknown reason.'
-            messages.warning(request, f'Booking Group #{booking_group.id} confirmed, but SMS failed: {sms_error}')
+        enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_EMAIL")
+        enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_SMS")
+        messages.success(
+            request,
+            f"Booking Group #{booking_group.id} confirmed. Email/SMS notifications queued.",
+        )
         log_admin_action(
             request,
             'booking_confirm',
             'BookingGroup',
             booking_group.id,
-            {'sms_sent': sms_ok, 'transaction_id': booking_group.transaction_id},
+            {'notifications_queued': True, 'transaction_id': booking_group.transaction_id},
         )
     else:
         messages.error(request, f'Booking Group #{booking_group.id} cannot be confirmed because it is not in Pending status.')
@@ -789,6 +790,7 @@ def admin_confirm_booking(request, booking_group_id):
 
 @login_required
 @require_perm("manage_sms_ops")
+@require_POST
 def admin_resend_sms_receipt(request, booking_group_id):
     """Admin can resend the SMS receipt if the first send failed."""
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
@@ -800,19 +802,14 @@ def admin_resend_sms_receipt(request, booking_group_id):
         messages.info(request, f'SMS receipt was already sent for Booking Group #{booking_group.id}.')
         return redirect('admin_booking_detail', booking_group_id=booking_group.id)
 
-    sms_ok = send_booking_confirmed_sms(booking_group, source='admin-resend')
-    if sms_ok:
-        messages.success(request, f'SMS receipt sent for Booking Group #{booking_group.id}.')
-    else:
-        booking_group.refresh_from_db()
-        sms_error = booking_group.sms_error_message or 'SMS send failed for unknown reason.'
-        messages.error(request, f'SMS resend failed for Booking Group #{booking_group.id}: {sms_error}')
+    enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_SMS", {"source": "admin-resend"})
+    messages.success(request, f'SMS resend queued for Booking Group #{booking_group.id}.')
     log_admin_action(
         request,
         'sms_receipt_resend',
         'BookingGroup',
         booking_group.id,
-        {'success': sms_ok},
+        {'queued': True},
     )
     return redirect('admin_booking_detail', booking_group_id=booking_group.id)
 
@@ -856,6 +853,7 @@ def admin_sms_dashboard(request):
 
 @login_required
 @require_perm("manage_sms_ops")
+@require_POST
 def admin_sms_retry_all_failed(request):
     """
     Retry SMS delivery for all currently failed confirmed booking groups.
@@ -865,22 +863,18 @@ def admin_sms_retry_all_failed(request):
         messages.info(request, 'No failed SMS records to retry.')
         return redirect('admin_sms_dashboard')
 
-    success = 0
-    failed = 0
+    queued = 0
     for bg in failed_groups:
-        ok = send_booking_confirmed_sms(bg, source='admin-bulk-retry')
-        if ok:
-            success += 1
-        else:
-            failed += 1
+        enqueue_notification_job(bg.id, "BOOKING_CONFIRMED_SMS", {"source": "admin-bulk-retry"})
+        queued += 1
 
-    messages.info(request, f'SMS retry completed. Sent: {success}, Failed: {failed}.')
+    messages.info(request, f'SMS retry queued for {queued} booking group(s).')
     log_admin_action(
         request,
         'sms_bulk_retry',
         'BulkSMS',
         '',
-        {'success_count': success, 'failed_count': failed},
+        {'queued_count': queued},
     )
     return redirect('admin_sms_dashboard')
 
@@ -948,6 +942,36 @@ def admin_payment_webhook_detail(request, event_pk):
         "NelsaApp/admin_payment_webhook_detail.html",
         {"event": event, "payload_pretty": payload_pretty},
     )
+
+
+@login_required
+@require_perm("view_paymentwebhooks")
+@require_POST
+def admin_retry_payment_webhook(request, event_pk):
+    event = get_object_or_404(PaymentWebhookEvent, pk=event_pk)
+    if event.processed:
+        messages.info(request, "This webhook event is already processed.")
+        return redirect("admin_payment_webhook_detail", event_pk=event.pk)
+    if event.dead_lettered:
+        messages.error(request, "Event is dead-lettered. Increase max retries or inspect payload manually.")
+        return redirect("admin_payment_webhook_detail", event_pk=event.pk)
+
+    try:
+        _process_payment_event(event.payload or {}, event)
+        event.processed = True
+        event.status = "PROCESSED"
+        event.error_message = None
+        event.last_retry_at = timezone.now()
+        event.processed_at = timezone.now()
+        event.save(
+            update_fields=["processed", "status", "error_message", "last_retry_at", "processed_at", "booking_group"]
+        )
+        messages.success(request, "Webhook event retried successfully.")
+    except Exception as exc:
+        _mark_webhook_failed(event, exc, status="REJECTED")
+        messages.error(request, f"Retry failed: {exc}")
+    log_admin_action(request, "webhook_retry", "PaymentWebhookEvent", event.pk, {"event_id": event.event_id})
+    return redirect("admin_payment_webhook_detail", event_pk=event.pk)
 
 
 def verify_ticket(request):
@@ -1257,6 +1281,7 @@ def admin_audit_log_view(request):
 
 @login_required
 @require_perm("cancel_bookinggroup")
+@require_POST
 def admin_cancel_booking(request, booking_group_id):
     """Admin view to cancel a booking group."""
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
@@ -1733,6 +1758,179 @@ def _verify_payment_webhook_hmac(request, raw_body: bytes) -> bool:
     return secrets.compare_digest(digest, sig)
 
 
+def _verify_provider_signature(provider: str, request, raw_body: bytes) -> bool:
+    """
+    Provider-specific signature verification when configured.
+    """
+    p = (provider or "").upper()
+    if p == "PAYSTACK":
+        secret = (getattr(settings, "PAYSTACK_WEBHOOK_SECRET", "") or "").strip()
+        if not secret:
+            return True
+        sig = (request.headers.get("X-Paystack-Signature") or "").strip()
+        if not sig:
+            return False
+        digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha512).hexdigest()
+        return secrets.compare_digest(digest, sig)
+    if p == "FLUTTERWAVE":
+        hash_cfg = (getattr(settings, "FLUTTERWAVE_WEBHOOK_HASH", "") or "").strip()
+        if not hash_cfg:
+            return True
+        sig = (request.headers.get("Verif-Hash") or "").strip()
+        return bool(sig and secrets.compare_digest(hash_cfg, sig))
+    return True
+
+
+def _verify_webhook_replay_window(request, provider: str) -> tuple[bool, str]:
+    """
+    Enforce timestamp + nonce to mitigate webhook replay.
+    """
+    max_skew = int(getattr(settings, "PAYMENT_WEBHOOK_MAX_SKEW_SECONDS", 300))
+    ts_raw = (request.headers.get("X-Webhook-Timestamp") or "").strip()
+    nonce = (request.headers.get("X-Webhook-Nonce") or "").strip()
+    if not ts_raw or not nonce:
+        return False, "Missing webhook timestamp/nonce"
+    try:
+        ts = int(ts_raw)
+    except ValueError:
+        return False, "Invalid webhook timestamp"
+    now_ts = int(timezone.now().timestamp())
+    if abs(now_ts - ts) > max_skew:
+        return False, "Webhook timestamp outside allowed window"
+    try:
+        PaymentWebhookNonce.objects.create(nonce=nonce, provider=(provider or "GENERIC"))
+    except Exception:
+        return False, "Webhook nonce already used (replay detected)"
+    return True, ""
+
+
+def _resolve_event_kind(payload: dict) -> str:
+    provider_status = str(payload.get("status") or "").strip().upper()
+    event_kind_raw = (payload.get("event_kind") or payload.get("type") or "").strip().lower()
+    refund_statuses = ("REFUNDED", "REFUND", "REFUND_COMPLETED")
+    if provider_status in refund_statuses:
+        return "refund"
+    if event_kind_raw in ("refund", "payment.refund"):
+        return "refund"
+    return "payment"
+
+
+def _process_payment_event(payload: dict, event: PaymentWebhookEvent) -> None:
+    booking_group_id = payload.get("booking_group_id")
+    transaction_id = str(payload.get("transaction_id") or "").strip()
+    payment_method = str(payload.get("payment_method") or "").strip().upper()
+    provider_status = str(payload.get("status") or "").strip().upper()
+    amount_raw = payload.get("amount")
+    provider = str(payload.get("provider") or "GENERIC").strip().upper()
+    event_id = str(payload.get("event_id") or "").strip()
+    event_kind = _resolve_event_kind(payload)
+
+    if not booking_group_id:
+        raise ValueError("Missing booking_group_id")
+
+    if event_kind == "refund":
+        booking_group = BookingGroup.objects.select_related("payment").get(id=booking_group_id)
+        event.booking_group = booking_group
+        pay = getattr(booking_group, "payment", None)
+        if pay:
+            pay.status = "REFUNDED"
+            details = dict(pay.payment_details or {})
+            details.update(
+                {
+                    "refund_webhook_event_id": event_id,
+                    "refund_provider": provider,
+                    "refunded_at": timezone.now().isoformat(),
+                }
+            )
+            pay.payment_details = details
+            if transaction_id:
+                pay.transaction_id = transaction_id
+            pay.save()
+        booking_group.refund_status = "COMPLETED"
+        booking_group.refund_completed_at = timezone.now()
+        booking_group.bookings.update(status="Cancelled")
+        booking_group.status = "Cancelled"
+        booking_group.save(update_fields=["refund_status", "refund_completed_at", "status"])
+        return
+
+    if not payment_method:
+        raise ValueError("Missing payment_method")
+    if not transaction_id:
+        raise ValueError("Missing transaction_id")
+    if provider_status not in ("COMPLETED", "SUCCESS"):
+        raise ValueError(f"Payment status not successful: {provider_status or 'UNKNOWN'}")
+    try:
+        amount = Decimal(str(amount_raw))
+    except (InvalidOperation, TypeError):
+        raise ValueError("Invalid amount in webhook payload")
+
+    booking_group = BookingGroup.objects.select_related("payment").get(id=booking_group_id)
+    event.booking_group = booking_group
+
+    expected_amount = Decimal(str(booking_group.total_amount))
+    if amount != expected_amount:
+        raise ValueError(f"Amount mismatch. Expected {expected_amount}, got {amount}")
+
+    valid_methods = [m[0] for m in Payment.PAYMENT_METHODS]
+    if payment_method not in valid_methods:
+        raise ValueError("Invalid payment_method")
+
+    payment, _ = Payment.objects.get_or_create(
+        booking_group=booking_group,
+        defaults={
+            "amount": booking_group.total_amount,
+            "payment_method": payment_method,
+            "transaction_id": transaction_id,
+            "status": "COMPLETED",
+            "payment_details": {
+                "webhook_event_id": event_id,
+                "provider": provider,
+                "verified_at": timezone.now().isoformat(),
+                "verified_by": "webhook",
+            },
+        },
+    )
+
+    payment.amount = booking_group.total_amount
+    payment.payment_method = payment_method
+    payment.transaction_id = transaction_id
+    payment.status = "COMPLETED"
+    payment.payment_details = {
+        "webhook_event_id": event_id,
+        "provider": provider,
+        "verified_at": timezone.now().isoformat(),
+        "verified_by": "webhook",
+    }
+    payment.save()
+
+    booking_group.transaction_id = transaction_id
+    booking_group.transaction_verified = True
+    booking_group.verified_at = timezone.now()
+    booking_group.save(update_fields=["transaction_id", "transaction_verified", "verified_at"])
+
+
+def _mark_webhook_failed(event: PaymentWebhookEvent, exc: Exception, *, status: str = "REJECTED") -> None:
+    max_retries = int(getattr(settings, "PAYMENT_WEBHOOK_MAX_RETRIES", 3))
+    event.processed = False
+    event.status = status
+    event.error_message = str(exc)
+    event.retry_count = (event.retry_count or 0) + 1
+    event.last_retry_at = timezone.now()
+    event.dead_lettered = event.retry_count >= max_retries
+    event.processed_at = timezone.now()
+    event.save(
+        update_fields=[
+            "processed",
+            "status",
+            "error_message",
+            "retry_count",
+            "last_retry_at",
+            "dead_lettered",
+            "processed_at",
+        ]
+    )
+
+
 @csrf_exempt
 def payment_webhook(request):
     """
@@ -1768,25 +1966,18 @@ def payment_webhook(request):
 
     event_id = str(payload.get("event_id") or "").strip()
     provider = str(payload.get("provider") or "GENERIC").strip().upper()
-    booking_group_id = payload.get("booking_group_id")
-    transaction_id = str(payload.get("transaction_id") or "").strip()
-    payment_method = str(payload.get("payment_method") or "").strip().upper()
-    provider_status = str(payload.get("status") or "").strip().upper()
-    amount_raw = payload.get("amount")
 
     if not event_id:
         return JsonResponse({"success": False, "message": "Missing event_id"}, status=400)
 
-    event_kind_raw = (payload.get("event_kind") or payload.get("type") or "").strip().lower()
-    refund_statuses = ("REFUNDED", "REFUND", "REFUND_COMPLETED")
-    if provider_status in refund_statuses:
-        event_kind = "refund"
-    elif event_kind_raw in ("refund", "payment.refund"):
-        event_kind = "refund"
-    elif event_kind_raw in ("payment", "payment.succeeded", "charge.succeeded", ""):
-        event_kind = "payment"
-    else:
-        event_kind = "payment"
+    if not _verify_provider_signature(provider, request, raw_body):
+        return JsonResponse({"success": False, "message": "Provider signature verification failed"}, status=401)
+    replay_ok, replay_reason = _verify_webhook_replay_window(request, provider)
+    if not replay_ok:
+        return JsonResponse({"success": False, "message": replay_reason}, status=409)
+
+    event_kind = _resolve_event_kind(payload)
+    transaction_id = str(payload.get("transaction_id") or "").strip()
 
     event, created = PaymentWebhookEvent.objects.get_or_create(
         event_id=event_id,
@@ -1811,130 +2002,30 @@ def payment_webhook(request):
     event.save(update_fields=["payload", "provider", "signature", "transaction_id", "event_kind"])
 
     try:
-        if not booking_group_id:
-            raise ValueError("Missing booking_group_id")
-
-        if event_kind == "refund":
-            booking_group = BookingGroup.objects.select_related("payment").get(id=booking_group_id)
-            event.booking_group = booking_group
-            pay = getattr(booking_group, "payment", None)
-            if pay:
-                pay.status = "REFUNDED"
-                details = dict(pay.payment_details or {})
-                details.update(
-                    {
-                        "refund_webhook_event_id": event_id,
-                        "refund_provider": provider,
-                        "refunded_at": timezone.now().isoformat(),
-                    }
-                )
-                pay.payment_details = details
-                if transaction_id:
-                    pay.transaction_id = transaction_id
-                pay.save()
-            booking_group.refund_status = "COMPLETED"
-            booking_group.refund_completed_at = timezone.now()
-            booking_group.bookings.update(status="Cancelled")
-            booking_group.status = "Cancelled"
-            booking_group.save(
-                update_fields=[
-                    "refund_status",
-                    "refund_completed_at",
-                    "status",
-                ]
-            )
-            event.processed = True
-            event.status = "PROCESSED"
-            event.error_message = None
-            event.processed_at = timezone.now()
-            event.save(
-                update_fields=[
-                    "booking_group",
-                    "processed",
-                    "status",
-                    "error_message",
-                    "processed_at",
-                ]
-            )
-            return JsonResponse({"success": True, "message": "Refund webhook processed"})
-
-        if not payment_method:
-            raise ValueError("Missing payment_method")
-        if not transaction_id:
-            raise ValueError("Missing transaction_id")
-        if provider_status not in ("COMPLETED", "SUCCESS"):
-            raise ValueError(f"Payment status not successful: {provider_status or 'UNKNOWN'}")
-
-        try:
-            amount = Decimal(str(amount_raw))
-        except (InvalidOperation, TypeError):
-            raise ValueError("Invalid amount in webhook payload")
-
-        booking_group = BookingGroup.objects.select_related("payment").get(id=booking_group_id)
-        event.booking_group = booking_group
-
-        expected_amount = Decimal(str(booking_group.total_amount))
-        if amount != expected_amount:
-            raise ValueError(f"Amount mismatch. Expected {expected_amount}, got {amount}")
-
-        valid_methods = [m[0] for m in Payment.PAYMENT_METHODS]
-        if payment_method not in valid_methods:
-            raise ValueError("Invalid payment_method")
-
-        payment, _ = Payment.objects.get_or_create(
-            booking_group=booking_group,
-            defaults={
-                "amount": booking_group.total_amount,
-                "payment_method": payment_method,
-                "transaction_id": transaction_id,
-                "status": "COMPLETED",
-                "payment_details": {
-                    "webhook_event_id": event_id,
-                    "provider": provider,
-                    "verified_at": timezone.now().isoformat(),
-                    "verified_by": "webhook",
-                },
-            },
-        )
-
-        payment.amount = booking_group.total_amount
-        payment.payment_method = payment_method
-        payment.transaction_id = transaction_id
-        payment.status = "COMPLETED"
-        payment.payment_details = {
-            "webhook_event_id": event_id,
-            "provider": provider,
-            "verified_at": timezone.now().isoformat(),
-            "verified_by": "webhook",
-        }
-        payment.save()
-
-        booking_group.transaction_id = transaction_id
-        booking_group.transaction_verified = True
-        booking_group.verified_at = timezone.now()
-        booking_group.save(update_fields=["transaction_id", "transaction_verified", "verified_at"])
-
+        _process_payment_event(payload, event)
         event.processed = True
         event.status = "PROCESSED"
         event.error_message = None
+        event.last_retry_at = timezone.now()
         event.processed_at = timezone.now()
-        event.save(update_fields=["booking_group", "processed", "status", "error_message", "processed_at"])
+        event.save(
+            update_fields=[
+                "booking_group",
+                "processed",
+                "status",
+                "error_message",
+                "last_retry_at",
+                "processed_at",
+            ]
+        )
 
         return JsonResponse({"success": True, "message": "Webhook processed"})
 
     except BookingGroup.DoesNotExist:
-        event.processed = False
-        event.status = "FAILED"
-        event.error_message = "Booking group not found"
-        event.processed_at = timezone.now()
-        event.save(update_fields=["processed", "status", "error_message", "processed_at"])
+        _mark_webhook_failed(event, Exception("Booking group not found"), status="FAILED")
         return JsonResponse({"success": False, "message": "Booking group not found"}, status=404)
     except Exception as exc:
-        event.processed = False
-        event.status = "REJECTED"
-        event.error_message = str(exc)
-        event.processed_at = timezone.now()
-        event.save(update_fields=["processed", "status", "error_message", "processed_at"])
+        _mark_webhook_failed(event, exc, status="REJECTED")
         if getattr(settings, "ALERT_ON_WEBHOOK_FAILURE", False):
             send_ops_alert(
                 "Payment webhook rejected",

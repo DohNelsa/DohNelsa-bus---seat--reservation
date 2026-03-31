@@ -206,21 +206,30 @@
         </a>
         <div class="flex space-x-3">
             {% if booking_group.status == 'Pending' %}
-                <a href="{% url 'admin_confirm_booking' booking_group.id %}" class="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2" onclick="return confirm('Are you sure you want to confirm this booking group? This will send SMS notification to the passenger.')">
-                    <i class="fas fa-check mr-2"></i>Confirm Booking Group
-                </a>
+                <form method="post" action="{% url 'admin_confirm_booking' booking_group.id %}" onsubmit="return confirm('Are you sure you want to confirm this booking group? This will queue SMS/email notification for the passenger.')">
+                    {% csrf_token %}
+                    <button type="submit" class="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                        <i class="fas fa-check mr-2"></i>Confirm Booking Group
+                    </button>
+                </form>
             {% endif %}
 
             {% if booking_group.status == 'Confirmed' and booking_group.sms_status != 'SENT' %}
-                <a href="{% url 'admin_resend_sms_receipt' booking_group.id %}" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" onclick="return confirm('Resend SMS receipt code to the passenger?')">
-                    <i class="fas fa-paper-plane mr-2"></i>Resend SMS Receipt
-                </a>
+                <form method="post" action="{% url 'admin_resend_sms_receipt' booking_group.id %}" onsubmit="return confirm('Queue SMS receipt resend to the passenger?')">
+                    {% csrf_token %}
+                    <button type="submit" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                        <i class="fas fa-paper-plane mr-2"></i>Resend SMS Receipt
+                    </button>
+                </form>
             {% endif %}
 
             {% if booking_group.status != 'Cancelled' %}
-            <a href="{% url 'admin_cancel_booking' booking_group.id %}" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2" onclick="return confirm('Are you sure you want to cancel this booking group? This will send SMS notification to the passenger.')">
-                <i class="fas fa-times mr-2"></i>Cancel Booking Group
-            </a>
+            <form method="post" action="{% url 'admin_cancel_booking' booking_group.id %}" onsubmit="return confirm('Are you sure you want to cancel this booking group?')">
+                {% csrf_token %}
+                <button type="submit" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                    <i class="fas fa-times mr-2"></i>Cancel Booking Group
+                </button>
+            </form>
             {% endif %}
             {% if can_manage_refunds and booking_group.status != 'Cancelled' and booking_group.refund_status == 'NONE' %}
             <a href="{% url 'admin_rebook_booking' booking_group.id %}" class="bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Rebook</a>
