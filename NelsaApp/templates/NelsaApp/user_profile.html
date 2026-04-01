@@ -200,8 +200,11 @@
                                                         <i class="fas fa-cog me-1"></i> Actions
                                                     </button>
                                                     <ul class="dropdown-menu">
+                                                        <li><a class="dropdown-item" href="{% url 'customer_booking_detail' booking_group.id %}">
+                                                            <i class="fas fa-tasks me-2"></i> Manage / status
+                                                        </a></li>
                                                         <li><a class="dropdown-item" href="#" onclick="viewBookingDetails({{ booking_group.id }})">
-                                                            <i class="fas fa-eye me-2"></i> View Details
+                                                            <i class="fas fa-eye me-2"></i> Quick view
                                                         </a></li>
                                                         {% if booking_group.status == 'Pending' %}
                                                             <li><a class="dropdown-item" href="{% url 'payment' booking_group.id %}">

@@ -79,6 +79,25 @@
                             </p>
                         </div>
                         <div>
+                            <p class="text-sm text-gray-500">Customer notification (passenger view)</p>
+                            <p class="font-medium text-sm">{{ booking_group.get_customer_notification_status_display }}</p>
+                            {% if booking_group.confirmation_email_sent_at %}
+                            <p class="text-xs text-gray-500">Email sent {{ booking_group.confirmation_email_sent_at|date:"Y-m-d H:i" }}</p>
+                            {% endif %}
+                        </div>
+                        {% if booking_group.customer_cancel_requested_at %}
+                        <div>
+                            <p class="text-sm text-gray-500">Customer cancellation request</p>
+                            <p class="text-xs text-amber-800">Requested {{ booking_group.customer_cancel_requested_at|date:"Y-m-d H:i" }}</p>
+                            {% if booking_group.customer_cancel_reason %}
+                            <p class="text-sm whitespace-pre-wrap mt-1">{{ booking_group.customer_cancel_reason }}</p>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        {% if booking_group.customer_refund_requested %}
+                        <p class="text-xs text-blue-700">Passenger submitted refund request via self-service.</p>
+                        {% endif %}
+                        <div>
                             <p class="text-sm text-gray-500">Refund status</p>
                             <p class="font-medium">{{ booking_group.get_refund_status_display }}</p>
                             {% if booking_group.refund_requested_at %}

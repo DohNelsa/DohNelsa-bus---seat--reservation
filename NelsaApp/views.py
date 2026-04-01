@@ -8,7 +8,7 @@ from django.contrib import messages
 from .forms import BookingForm
 
 from django.contrib.auth.decorators import login_required
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from .models import (
     AdminAuditLog,
     Booking,
@@ -56,6 +56,7 @@ from .monitoring import send_ops_alert
 from .rbac import require_admin_portal, require_perm, user_has_perm
 from .security import ip_allowlist, rate_limit
 from .tickets import sign_booking_group_ticket, verify_ticket_token
+from .customer_notify import refund_sla_due_at
 
 def _passenger_email_for_user(user):
     """Passenger email key; must match book_seats_api (handles empty User.email)."""
@@ -235,6 +236,7 @@ def Login_view(request):
         form = LoginForm()
     return render(request, 'NelsaApp/login.html', {'form':form})
 
+@require_POST
 def logout_view(request):
     logout(request)
     return redirect('index')
@@ -628,20 +630,31 @@ def book_seats_api(request):
 @login_required
 def booking_success_view(request):
     """View for the booking success page."""
-    # Get the most recent booking for the current user
+    booking = None
+    booking_group = None
     if request.user.is_authenticated:
-        booking = Booking.objects.filter(passenger__email=_passenger_email_for_user(request.user)).order_by('-booking_date').first()
-    else:
-        booking = None
+        email = _passenger_email_for_user(request.user)
+        bg_raw = request.GET.get("booking_group_id")
+        if bg_raw:
+            try:
+                booking_group = BookingGroup.objects.filter(pk=int(bg_raw), passenger__email=email).first()
+            except (ValueError, TypeError):
+                booking_group = None
+            if booking_group:
+                booking = booking_group.bookings.order_by("id").first()
+        if not booking:
+            booking = Booking.objects.filter(passenger__email=email).order_by("-booking_date").first()
+            if booking and booking.booking_group_id:
+                booking_group = BookingGroup.objects.filter(pk=booking.booking_group_id).first()
 
-    ctx = {'booking': booking}
+    ctx = {"booking": booking, "booking_group": booking_group}
     if booking and booking.booking_group_id:
         tid = booking.booking_group_id
         token = sign_booking_group_ticket(tid)
-        ctx['ticket_verify_url'] = request.build_absolute_uri(reverse('verify_ticket')) + '?' + urlencode({'t': token})
-        ctx['ticket_qr_url'] = request.build_absolute_uri(reverse('ticket_qr_png')) + '?' + urlencode({'t': token})
+        ctx["ticket_verify_url"] = request.build_absolute_uri(reverse("verify_ticket")) + "?" + urlencode({"t": token})
+        ctx["ticket_qr_url"] = request.build_absolute_uri(reverse("ticket_qr_png")) + "?" + urlencode({"t": token})
 
-    return render(request, 'NelsaApp/booking_success.html', ctx)
+    return render(request, "NelsaApp/booking_success.html", ctx)
 
 # Admin booking management views
 @login_required
@@ -768,7 +781,10 @@ def admin_confirm_booking(request, booking_group_id):
         booking_group.status = 'Confirmed'
         booking_group.verified_by = request.user
         booking_group.verified_at = timezone.now()
-        booking_group.save()
+        booking_group.customer_notification_status = 'PROCESSING'
+        booking_group.save(
+            update_fields=['status', 'verified_by', 'verified_at', 'customer_notification_status'],
+        )
 
         enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_EMAIL")
         enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_SMS")
@@ -1150,6 +1166,7 @@ def admin_complete_refund(request, booking_group_id):
 
 @login_required
 @require_perm("manage_refunds_rebooks")
+@require_http_methods(["GET", "POST"])
 def admin_rebook_booking(request, booking_group_id):
     old = get_object_or_404(
         BookingGroup.objects.select_related("passenger", "schedule__route", "schedule__bus", "payment").prefetch_related(
@@ -1359,6 +1376,8 @@ def user_profile(request):
     pending_bookings = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user), status='Pending').count()
     cancelled_bookings = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user), status='Cancelled').count()
     
+    passenger = Passenger.objects.filter(email=_passenger_email_for_user(request.user)).first()
+
     context = {
         'booking_groups': booking_groups,
         'total_bookings': total_bookings,
@@ -1368,9 +1387,103 @@ def user_profile(request):
         'search_query': search_query,
         'status_filter': status_filter,
         'date_filter': date_filter,
+        'passenger': passenger,
     }
-    
+
     return render(request, 'NelsaApp/user_profile.html', context)
+
+
+@login_required
+@rate_limit(
+    key_prefix="customer_self_service",
+    limit=lambda _r: int(getattr(settings, "CUSTOMER_SELF_SERVICE_RATE_LIMIT_PER_MIN", 60)),
+    window_seconds=60,
+)
+def customer_booking_detail(request, booking_group_id):
+    """Passenger self-service: status, notifications, cancel/refund requests (POST + CSRF)."""
+    email = _passenger_email_for_user(request.user)
+    bg = get_object_or_404(
+        BookingGroup.objects.select_related("passenger", "schedule__route", "schedule__bus", "payment").prefetch_related(
+            "bookings"
+        ),
+        pk=booking_group_id,
+        passenger__email=email,
+    )
+
+    sla_h = int(getattr(settings, "CUSTOMER_REFUND_SLA_HOURS", 48))
+    refund_due = refund_sla_due_at(bg.refund_requested_at, sla_h)
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        if action == "cancel_request":
+            if bg.status not in ("Pending", "Confirmed"):
+                messages.error(request, "This booking cannot be cancelled from self-service.")
+            elif bg.customer_cancel_requested_at:
+                messages.info(request, "We already received your cancellation request.")
+            else:
+                reason = (request.POST.get("reason") or "").strip()[:2000]
+                bg.customer_cancel_requested_at = timezone.now()
+                bg.customer_cancel_reason = reason or None
+                bg.save(update_fields=["customer_cancel_requested_at", "customer_cancel_reason"])
+                log_admin_action(
+                    request,
+                    "customer_cancel_request",
+                    "BookingGroup",
+                    bg.id,
+                    {"reason": reason[:500] if reason else ""},
+                )
+                messages.success(
+                    request,
+                    "Cancellation request submitted. Our team will update your booking and contact you if needed.",
+                )
+        elif action == "refund_request":
+            if bg.status != "Confirmed" or bg.refund_status != "NONE":
+                messages.error(request, "A refund cannot be requested for this booking in its current state.")
+            elif bg.customer_refund_requested:
+                messages.info(request, "A refund request is already recorded for this booking.")
+            else:
+                reason = (request.POST.get("reason") or "").strip()[:3800]
+                bg.refund_status = "REQUESTED"
+                bg.refund_notes = ("[Customer] " + reason) if reason else "[Customer] Refund requested via profile."
+                bg.refund_requested_at = timezone.now()
+                bg.customer_refund_requested = True
+                bg.save(
+                    update_fields=[
+                        "refund_status",
+                        "refund_notes",
+                        "refund_requested_at",
+                        "customer_refund_requested",
+                    ]
+                )
+                log_admin_action(
+                    request,
+                    "customer_refund_request",
+                    "BookingGroup",
+                    bg.id,
+                    {},
+                )
+                messages.success(
+                    request,
+                    "Refund request submitted. Finance will process it within the published SLA when possible.",
+                )
+        else:
+            messages.error(request, "Unknown action.")
+        return redirect("customer_booking_detail", booking_group_id=bg.id)
+
+    token = sign_booking_group_ticket(bg.id)
+    ticket_verify_url = request.build_absolute_uri(reverse("verify_ticket")) + "?" + urlencode({"t": token})
+
+    return render(
+        request,
+        "NelsaApp/customer_booking_detail.html",
+        {
+            "bg": bg,
+            "refund_sla_hours": sla_h,
+            "refund_sla_due_at": refund_due,
+            "ticket_verify_url": ticket_verify_url,
+        },
+    )
+
 
 @login_required
 def profile_edit(request):
@@ -1499,6 +1612,7 @@ def services_page(request):
 
 @login_required
 @require_perm("access_admin_bookings")
+@require_http_methods(["GET", "POST"])
 def fix_duplicate_passengers(request):
     """Fix passengers with duplicate or generic names."""
     if request.method == 'POST':
@@ -1866,6 +1980,8 @@ def _process_payment_event(payload: dict, event: PaymentWebhookEvent) -> None:
     if event_kind == "refund":
         booking_group = BookingGroup.objects.select_related("payment").get(id=booking_group_id)
         event.booking_group = booking_group
+        if booking_group.refund_status == "COMPLETED" and booking_group.status == "Cancelled":
+            return
         pay = getattr(booking_group, "payment", None)
         if pay:
             pay.status = "REFUNDED"
@@ -1901,6 +2017,15 @@ def _process_payment_event(payload: dict, event: PaymentWebhookEvent) -> None:
 
     booking_group = BookingGroup.objects.select_related("payment").get(id=booking_group_id)
     event.booking_group = booking_group
+
+    existing_pay = getattr(booking_group, "payment", None)
+    if (
+        existing_pay
+        and existing_pay.status == "COMPLETED"
+        and booking_group.transaction_verified
+        and str(existing_pay.transaction_id or "").strip() == transaction_id
+    ):
+        return
 
     expected_amount = Decimal(str(booking_group.total_amount))
     if amount != expected_amount:
@@ -2158,6 +2283,8 @@ def admin_reports(request):
         report_data = generate_revenue_report(from_date, to_date)
     elif report_type == 'buses':
         report_data = generate_bus_report(from_date, to_date)
+    elif report_type == 'finance_reconciliation':
+        report_data = generate_finance_reconciliation_report(from_date, to_date)
     else:
         report_data = generate_revenue_report(from_date, to_date)
     
@@ -2169,6 +2296,49 @@ def admin_reports(request):
     }
     
     return render(request, 'NelsaApp/admin_reports.html', context)
+
+
+def generate_finance_reconciliation_report(from_date=None, to_date=None):
+    """
+    End-to-end snapshot: booking groups vs payments vs refunds vs rebooks vs webhooks (date filter on created/received).
+    """
+    qs = BookingGroup.objects.all()
+    if from_date:
+        qs = qs.filter(created_at__date__gte=from_date)
+    if to_date:
+        qs = qs.filter(created_at__date__lte=to_date)
+
+    payment_qs = Payment.objects.filter(booking_group__in=qs)
+    we = PaymentWebhookEvent.objects.filter(processed=True, status="PROCESSED")
+    if from_date:
+        we = we.filter(received_at__date__gte=from_date)
+    if to_date:
+        we = we.filter(received_at__date__lte=to_date)
+
+    return {
+        "period_booking_groups": qs.count(),
+        "by_status": {
+            "Pending": qs.filter(status="Pending").count(),
+            "Confirmed": qs.filter(status="Confirmed").count(),
+            "Cancelled": qs.filter(status="Cancelled").count(),
+        },
+        "by_status_items": [
+            ("Pending", qs.filter(status="Pending").count()),
+            ("Confirmed", qs.filter(status="Confirmed").count()),
+            ("Cancelled", qs.filter(status="Cancelled").count()),
+        ],
+        "payments_completed_count": payment_qs.filter(status="COMPLETED").count(),
+        "payments_refunded_count": payment_qs.filter(status="REFUNDED").count(),
+        "amount_completed": payment_qs.filter(status="COMPLETED").aggregate(s=Sum("amount"))["s"] or Decimal("0"),
+        "amount_refunded": payment_qs.filter(status="REFUNDED").aggregate(s=Sum("amount"))["s"] or Decimal("0"),
+        "rebook_groups": qs.filter(rebooking_of__isnull=False).count(),
+        "refund_requested": qs.filter(refund_status="REQUESTED").count(),
+        "refund_completed": qs.filter(refund_status="COMPLETED").count(),
+        "customer_refund_flags": qs.filter(customer_refund_requested=True).count(),
+        "webhook_payment_events": we.filter(event_kind="payment").count(),
+        "webhook_refund_events": we.filter(event_kind="refund").count(),
+    }
+
 
 def generate_user_report(from_date=None, to_date=None):
     """Generate user registration and activity report."""

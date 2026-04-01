@@ -226,6 +226,18 @@ VERIFY_TICKET_RATE_LIMIT_PER_MIN = int(os.environ.get('VERIFY_TICKET_RATE_LIMIT_
 VERIFY_SMS_RECEIPT_RATE_LIMIT_PER_MIN = int(os.environ.get('VERIFY_SMS_RECEIPT_RATE_LIMIT_PER_MIN', '60'))
 PAYMENT_WEBHOOK_RATE_LIMIT_PER_MIN = int(os.environ.get('PAYMENT_WEBHOOK_RATE_LIMIT_PER_MIN', '120'))
 
+# Passenger self-service (profile): refund SLA display + throttling
+CUSTOMER_REFUND_SLA_HOURS = int(os.environ.get('CUSTOMER_REFUND_SLA_HOURS', '48'))
+CUSTOMER_SELF_SERVICE_RATE_LIMIT_PER_MIN = int(os.environ.get('CUSTOMER_SELF_SERVICE_RATE_LIMIT_PER_MIN', '60'))
+
+# Alert when SMS fails and email fallback also fails (confirmation queue)
+ALERT_ON_NOTIFICATION_FAILURE = os.environ.get('ALERT_ON_NOTIFICATION_FAILURE', 'False').lower() in (
+    'true',
+    '1',
+    'yes',
+    'on',
+)
+
 # Alert policy thresholds (ops command uses these values)
 ALERT_WEBHOOK_REJECTED_THRESHOLD_5M = int(os.environ.get('ALERT_WEBHOOK_REJECTED_THRESHOLD_5M', '3'))
 ALERT_WEBHOOK_DEAD_LETTER_THRESHOLD = int(os.environ.get('ALERT_WEBHOOK_DEAD_LETTER_THRESHOLD', '1'))

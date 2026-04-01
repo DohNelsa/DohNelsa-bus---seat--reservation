@@ -12,11 +12,18 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+def _sync_notify(bg_pk: int) -> None:
+    from .customer_notify import sync_customer_notification_status
+
+    sync_customer_notification_status(bg_pk)
+
+
 def send_booking_confirmed_email(booking_group, *, source: str = "payment") -> bool:
     """
     Send a confirmation email to the passenger when a booking group is confirmed.
 
     source: 'payment' (user completed payment flow) or 'admin' (staff confirmed manually).
+    Idempotent: skips sending if confirmation_email_sent_at is already set (unless source=force-resend).
     Returns True if send_mail reported success (1 message sent).
     """
     try:
@@ -40,6 +47,10 @@ def send_booking_confirmed_email(booking_group, *, source: str = "payment") -> b
     support_email = getattr(settings, "COMPANY_SUPPORT_EMAIL", settings.DEFAULT_FROM_EMAIL)
     support_phone = getattr(settings, "COMPANY_SUPPORT_PHONE", "")
     site_url = getattr(settings, "PUBLIC_SITE_URL", "").rstrip("/")
+
+    if bg.confirmation_email_sent_at and source != "force-resend":
+        _sync_notify(bg.pk)
+        return True
 
     passenger = bg.passenger
     to_email = (passenger.email or "").strip()
@@ -129,6 +140,11 @@ def send_booking_confirmed_email(booking_group, *, source: str = "payment") -> b
             [to_email],
             fail_silently=False,
         )
+        if sent:
+            type(booking_group).objects.filter(pk=bg.pk).update(
+                confirmation_email_sent_at=timezone.now(),
+            )
+            _sync_notify(bg.pk)
         return bool(sent)
     except Exception as exc:
         logger.exception("Failed to send booking confirmation email for BG %s: %s", bg.id, exc)

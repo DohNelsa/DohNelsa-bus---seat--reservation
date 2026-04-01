@@ -38,6 +38,7 @@ urlpatterns = [
     
     # User profile
     path('profile/', views.user_profile, name='user_profile'),
+    path('profile/booking/<int:booking_group_id>/', views.customer_booking_detail, name='customer_booking_detail'),
     path('profile/edit/', views.profile_edit, name='profile_edit'),
     path('manage-users/', views.admin_users, name='admin_users'),
     path('manage-users/<int:user_id>/', views.admin_user_detail, name='admin_user_detail'),

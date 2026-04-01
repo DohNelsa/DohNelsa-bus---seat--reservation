@@ -144,6 +144,13 @@
                         </dl>
                     </div>
                 </div>
+
+                {% if booking_group %}
+                <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                    <p class="text-sm text-blue-900">Track cancellation or refund requests and notification status for this trip.</p>
+                    <a href="{% url 'customer_booking_detail' booking_group.id %}" class="mt-2 inline-flex text-sm font-medium text-blue-700 hover:underline">Open booking workspace →</a>
+                </div>
+                {% endif %}
                 
                 <div class="flex justify-between">
                     <a href="{% url 'booking' %}" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">

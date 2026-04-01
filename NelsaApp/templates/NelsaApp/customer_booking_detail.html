@@ -1,0 +1,99 @@
+{% extends 'NelsaApp/base.html' %}
+{% load static %}
+
+{% block title %}Booking #{{ bg.id }} — MOGHAMO EXPRESS{% endblock %}
+
+{% block content %}
+<div class="pt-20 pb-12 max-w-3xl mx-auto px-4">
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="bg-slate-800 text-white px-6 py-4 flex flex-wrap justify-between items-center gap-2">
+            <div>
+                <h1 class="text-lg font-semibold">Booking group #{{ bg.id }}</h1>
+                <p class="text-slate-300 text-sm">{{ bg.schedule.route.start_location }} → {{ bg.schedule.route.end_location }}</p>
+            </div>
+            <a href="{% url 'user_profile' %}" class="text-sm text-slate-200 hover:text-white underline">← Back to profile</a>
+        </div>
+        <div class="p-6 space-y-6">
+            <div class="flex flex-wrap gap-2 items-center">
+                <span class="px-2 py-1 rounded text-xs font-semibold
+                    {% if bg.status == 'Confirmed' %}bg-green-100 text-green-800
+                    {% elif bg.status == 'Pending' %}bg-amber-100 text-amber-900
+                    {% else %}bg-red-100 text-red-800{% endif %}">{{ bg.status }}</span>
+                <span class="text-sm text-gray-600">Departure: {{ bg.schedule.departure_time|date:"M d, Y H:i" }}</span>
+            </div>
+
+            <div class="border rounded-lg p-4 bg-gray-50">
+                <h2 class="text-sm font-semibold text-gray-900 mb-2">Notifications (your view)</h2>
+                <p class="text-sm text-gray-700">{{ bg.get_customer_notification_status_display }}</p>
+                {% if bg.confirmation_email_sent_at %}
+                <p class="text-xs text-gray-500 mt-1">Confirmation email sent: {{ bg.confirmation_email_sent_at|date:"Y-m-d H:i" }}</p>
+                {% endif %}
+                {% if bg.sms_status == 'SENT' and bg.sms_receipt_code %}
+                <p class="text-xs text-gray-600 mt-1 font-mono">Park receipt code: {{ bg.sms_receipt_code }}</p>
+                {% endif %}
+            </div>
+
+            {% if bg.status == 'Confirmed' %}
+            <div class="border rounded-lg p-4">
+                <h2 class="text-sm font-semibold text-gray-900 mb-2">Digital ticket</h2>
+                <a href="{{ ticket_verify_url }}" class="text-blue-600 hover:underline text-sm break-all">{{ ticket_verify_url }}</a>
+            </div>
+            {% endif %}
+
+            {% if bg.refund_status == 'REQUESTED' and bg.refund_requested_at %}
+            <div class="border border-amber-200 bg-amber-50 rounded-lg p-4">
+                <h2 class="text-sm font-semibold text-amber-900">Refund request</h2>
+                <p class="text-sm text-amber-900 mt-1">Status: requested — finance will process when possible.</p>
+                {% if refund_sla_due_at %}
+                <p class="text-xs text-amber-800 mt-2">Target response window: within {{ refund_sla_hours }}h of request (by {{ refund_sla_due_at|date:"Y-m-d H:i" }} local).</p>
+                {% endif %}
+            </div>
+            {% elif bg.refund_status == 'COMPLETED' %}
+            <p class="text-sm text-gray-600">Refund: completed.</p>
+            {% endif %}
+
+            {% if bg.customer_cancel_requested_at %}
+            <div class="border border-blue-100 bg-blue-50 rounded-lg p-4">
+                <h2 class="text-sm font-semibold text-blue-900">Cancellation request</h2>
+                <p class="text-xs text-blue-800">Submitted {{ bg.customer_cancel_requested_at|date:"Y-m-d H:i" }}</p>
+                {% if bg.customer_cancel_reason %}
+                <p class="text-sm text-blue-900 mt-2 whitespace-pre-wrap">{{ bg.customer_cancel_reason }}</p>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if bg.status != 'Cancelled' %}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {% if bg.status == 'Pending' or bg.status == 'Confirmed' %}
+                {% if not bg.customer_cancel_requested_at %}
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-900 mb-2">Request cancellation</h3>
+                    <p class="text-xs text-gray-500 mb-2">We will review and update your booking. This does not auto-cancel paid trips.</p>
+                    <form method="post" action="">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="cancel_request">
+                        <textarea name="reason" rows="3" class="w-full border rounded p-2 text-sm" placeholder="Optional note"></textarea>
+                        <button type="submit" class="mt-2 bg-slate-700 text-white text-sm px-4 py-2 rounded hover:bg-slate-800">Submit cancellation request</button>
+                    </form>
+                </div>
+                {% endif %}
+                {% endif %}
+
+                {% if bg.status == 'Confirmed' and bg.refund_status == 'NONE' and not bg.customer_refund_requested %}
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-900 mb-2">Request refund</h3>
+                    <p class="text-xs text-gray-500 mb-2">For eligible paid bookings. Finance follows internal policy and the published SLA where applicable.</p>
+                    <form method="post" action="">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="refund_request">
+                        <textarea name="reason" rows="3" class="w-full border rounded p-2 text-sm" placeholder="Reason (required for faster handling)" required></textarea>
+                        <button type="submit" class="mt-2 bg-amber-700 text-white text-sm px-4 py-2 rounded hover:bg-amber-800">Submit refund request</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
