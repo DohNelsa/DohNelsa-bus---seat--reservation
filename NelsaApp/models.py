@@ -86,17 +86,6 @@ class BookingGroup(models.Model):
         ('COMPLETED', 'Completed'),
     ]
 
-    CUSTOMER_NOTIFY_STATUS_CHOICES = [
-        ('N/A', 'Not applicable'),
-        ('PROCESSING', 'Notifications processing'),
-        ('SMS_DELIVERED', 'SMS delivered'),
-        ('EMAIL_DELIVERED', 'Email delivered'),
-        ('SMS_AND_EMAIL', 'SMS and email delivered'),
-        ('SMS_FAILED_EMAIL_DELIVERED', 'SMS failed; email delivered'),
-        ('SMS_FAILED_EMAIL_FAILED', 'SMS failed; email failed'),
-        ('DELIVERY_FAILED', 'Delivery failed — contact support'),
-    ]
-
     passenger = models.ForeignKey(Passenger, on_delete=models.CASCADE)
     schedule = models.ForeignKey(Schedule, on_delete=models.CASCADE)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -140,21 +129,6 @@ class BookingGroup(models.Model):
         help_text='If true, confirmation does not require provider transaction verification (e.g. admin rebook credit).',
     )
     admin_notes = models.TextField(blank=True, null=True)
-
-    # Customer-visible notification + self-service (profile / SLA)
-    customer_notification_status = models.CharField(
-        max_length=40,
-        choices=CUSTOMER_NOTIFY_STATUS_CHOICES,
-        default='N/A',
-        db_index=True,
-    )
-    confirmation_email_sent_at = models.DateTimeField(null=True, blank=True)
-    customer_cancel_requested_at = models.DateTimeField(null=True, blank=True)
-    customer_cancel_reason = models.TextField(blank=True, null=True)
-    customer_refund_requested = models.BooleanField(
-        default=False,
-        help_text='True when the passenger submitted a refund request via self-service.',
-    )
 
     def __str__(self):
         return f"Booking Group {self.id} - {self.passenger.name} ({self.bookings.count()} seats)"

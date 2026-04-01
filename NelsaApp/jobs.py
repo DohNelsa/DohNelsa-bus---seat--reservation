@@ -1,10 +1,7 @@
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from .customer_notify import sync_customer_notification_status
 from .models import BookingGroup, NotificationJob
-from .monitoring import send_ops_alert
 from .notifications import send_booking_confirmed_email
 from .sms import send_booking_confirmed_sms
 
@@ -24,32 +21,10 @@ def process_one_notification_job(job: NotificationJob) -> bool:
     try:
         bg = BookingGroup.objects.get(pk=job.booking_group_id)
         if job.job_type == "BOOKING_CONFIRMED_EMAIL":
-            ok = send_booking_confirmed_email(bg, source="admin")
-            sync_customer_notification_status(bg.pk)
+            send_booking_confirmed_email(bg, source="admin")
+            ok = True
         elif job.job_type == "BOOKING_CONFIRMED_SMS":
             ok = send_booking_confirmed_sms(bg, source="admin")
-            sync_customer_notification_status(bg.pk)
-            bg.refresh_from_db()
-            if not ok:
-                had_email = bool(bg.confirmation_email_sent_at)
-                if not had_email:
-                    send_booking_confirmed_email(bg, source="admin")
-                    sync_customer_notification_status(bg.pk)
-                    bg.refresh_from_db()
-                    if not bg.confirmation_email_sent_at:
-                        BookingGroup.objects.filter(pk=bg.pk).update(
-                            customer_notification_status="DELIVERY_FAILED",
-                        )
-                        if getattr(settings, "ALERT_ON_NOTIFICATION_FAILURE", False):
-                            send_ops_alert(
-                                "Booking confirmation delivery failed",
-                                f"booking_group_id={bg.id}: SMS failed and email fallback failed.\n",
-                            )
-                        ok = False
-                    else:
-                        ok = True
-                else:
-                    ok = True
         else:
             raise ValueError(f"Unsupported job type: {job.job_type}")
 
@@ -58,7 +33,7 @@ def process_one_notification_job(job: NotificationJob) -> bool:
             job.error_message = None
         else:
             job.status = "FAILED"
-            job.error_message = job.error_message or "Provider send failed."
+            job.error_message = "Provider send failed."
         job.save(update_fields=["status", "error_message", "updated_at"])
         return ok
     except Exception as exc:

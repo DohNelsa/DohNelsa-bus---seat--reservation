@@ -1,22 +1,12 @@
 import json
 from datetime import timedelta
+
 from django.contrib.auth.models import Permission, User
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import (
-    AdminAuditLog,
-    Booking,
-    BookingGroup,
-    Bus,
-    NotificationJob,
-    Passenger,
-    Payment,
-    PaymentWebhookEvent,
-    Route,
-    Schedule,
-)
+from .models import AdminAuditLog, Booking, BookingGroup, Bus, NotificationJob, Passenger, Route, Schedule
 
 
 class HardeningTests(TestCase):
@@ -186,104 +176,3 @@ class HardeningTests(TestCase):
         self.assertTrue(
             AdminAuditLog.objects.filter(action="user_make_staff", target_type="User", target_id=str(target.id)).exists()
         )
-
-    def test_webhook_payment_processing_idempotent(self):
-        from NelsaApp.views import _process_payment_event
-
-        bg = BookingGroup.objects.create(
-            passenger=self.passenger,
-            schedule=self.schedule,
-            total_amount=5000,
-            status="Pending",
-            transaction_verified=False,
-        )
-        Payment.objects.create(
-            booking_group=bg,
-            amount=5000,
-            payment_method="MOMO",
-            transaction_id="txn_idem",
-            status="COMPLETED",
-        )
-        bg.transaction_verified = True
-        bg.transaction_id = "txn_idem"
-        bg.save(update_fields=["transaction_verified", "transaction_id"])
-
-        payload = {
-            "booking_group_id": bg.id,
-            "transaction_id": "txn_idem",
-            "payment_method": "MOMO",
-            "status": "SUCCESS",
-            "amount": "5000",
-            "event_id": "evt_idem",
-        }
-        ev = PaymentWebhookEvent.objects.create(
-            event_id="evt_idem_test",
-            payload=payload,
-            provider="GENERIC",
-            status="PENDING",
-        )
-        _process_payment_event(payload, ev)
-        _process_payment_event(payload, ev)
-
-    @override_settings(CUSTOMER_SELF_SERVICE_RATE_LIMIT_PER_MIN=1000)
-    def test_customer_refund_request(self):
-        self.client.login(username="u1", password="pw12345")
-        bg = BookingGroup.objects.create(
-            passenger=self.passenger,
-            schedule=self.schedule,
-            total_amount=5000,
-            status="Confirmed",
-            transaction_verified=True,
-            transaction_id="TX",
-        )
-        Payment.objects.create(
-            booking_group=bg,
-            amount=5000,
-            payment_method="MOMO",
-            transaction_id="TX",
-            status="COMPLETED",
-        )
-        Booking.objects.create(
-            passenger=self.passenger,
-            schedule=self.schedule,
-            seat_number=1,
-            status="Confirmed",
-            booking_group=bg,
-        )
-        resp = self.client.post(
-            reverse("customer_booking_detail", kwargs={"booking_group_id": bg.id}),
-            data={"action": "refund_request", "reason": "Plans changed"},
-        )
-        self.assertEqual(resp.status_code, 302)
-        bg.refresh_from_db()
-        self.assertEqual(bg.refund_status, "REQUESTED")
-        self.assertTrue(bg.customer_refund_requested)
-
-    @override_settings(
-        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-        SMS_ENABLED=False,
-        CUSTOMER_SELF_SERVICE_RATE_LIMIT_PER_MIN=1000,
-    )
-    def test_sms_failure_triggers_email_fallback(self):
-        from NelsaApp.jobs import process_one_notification_job
-
-        bg = BookingGroup.objects.create(
-            passenger=self.passenger,
-            schedule=self.schedule,
-            total_amount=5000,
-            status="Confirmed",
-            customer_notification_status="PROCESSING",
-        )
-        Booking.objects.create(
-            passenger=self.passenger,
-            schedule=self.schedule,
-            seat_number=1,
-            status="Confirmed",
-            booking_group=bg,
-        )
-        job = NotificationJob.objects.create(booking_group=bg, job_type="BOOKING_CONFIRMED_SMS", status="PENDING")
-        process_one_notification_job(job)
-        bg.refresh_from_db()
-        self.assertEqual(bg.sms_status, "FAILED")
-        self.assertIsNotNone(bg.confirmation_email_sent_at)
-        self.assertEqual(bg.customer_notification_status, "SMS_FAILED_EMAIL_DELIVERED")

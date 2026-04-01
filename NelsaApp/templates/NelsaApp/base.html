@@ -34,10 +34,7 @@
                             <a href="{% url 'admin_dashboard' %}" class="text-black hover:text-gray-800">Admin Dashboard</a>
                         {% endif %}
                         <a href="{% url 'user_profile' %}" class="text-black hover:text-gray-800">My Profile</a>
-                        <form method="post" action="{% url 'logout' %}" class="inline">
-                            {% csrf_token %}
-                            <button type="submit" class="text-black hover:text-gray-800 bg-transparent border-0 p-0 cursor-pointer font-sans text-sm">Logout</button>
-                        </form>
+                        <a href="{% url 'logout' %}" class="text-black hover:text-gray-800">Logout</a>
                     {% else %}
                         <a href="{% url 'Login' %}" class="text-black hover:text-gray-800">Login</a>
                         <a href="{% url 'user-register' %}" class="text-black hover:text-gray-800">Register</a>
@@ -68,10 +65,7 @@
                         <a href="{% url 'admin_dashboard' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">Admin Dashboard</a>
                     {% endif %}
                     <a href="{% url 'user_profile' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">My Profile</a>
-                    <form method="post" action="{% url 'logout' %}" class="block pl-3 pr-4 py-2">
-                        {% csrf_token %}
-                        <button type="submit" class="w-full text-left bg-transparent border-0 p-0 text-base font-medium text-gray-600 hover:text-gray-800 cursor-pointer">Logout</button>
-                    </form>
+                    <a href="{% url 'logout' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">Logout</a>
                 {% else %}
                     <a href="{% url 'Login' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">Login</a>
                     <a href="{% url 'user-register' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">Register</a>

@@ -27,7 +27,6 @@
                         <option value="revenue" {% if report_type == 'revenue' %}selected{% endif %}>Daily Revenue Report</option>
                         <option value="bookings" {% if report_type == 'bookings' %}selected{% endif %}>Booking Reports</option>
                         <option value="buses" {% if report_type == 'buses' %}selected{% endif %}>Bus Reports</option>
-                        <option value="finance_reconciliation" {% if report_type == 'finance_reconciliation' %}selected{% endif %}>Finance reconciliation</option>
                     </select>
                 </div>
                 <div>
@@ -376,62 +375,6 @@
                     <p class="text-gray-500">No bus utilization data available</p>
                 </div>
                 {% endif %}
-            </div>
-        </div>
-
-    {% elif report_type == 'finance_reconciliation' %}
-        <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
-            <div class="p-6">
-                <h2 class="text-xl font-bold text-gray-900 mb-2">Finance reconciliation</h2>
-                <p class="text-sm text-gray-600 mb-6">
-                    Booking groups created in the selected date range vs payment rows tied to those groups; webhook counts use <strong>received</strong> timestamps in the same range (processed events only).
-                </p>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                        <div class="text-sm text-slate-600">Booking groups (period)</div>
-                        <div class="text-2xl font-bold text-slate-900">{{ report_data.period_booking_groups }}</div>
-                    </div>
-                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                        <div class="text-sm text-blue-800">Payments completed (count)</div>
-                        <div class="text-2xl font-bold text-blue-900">{{ report_data.payments_completed_count }}</div>
-                    </div>
-                    <div class="bg-green-50 p-4 rounded-lg border border-green-100">
-                        <div class="text-sm text-green-800">Amount completed (FCFA)</div>
-                        <div class="text-2xl font-bold text-green-900">{{ report_data.amount_completed }}</div>
-                    </div>
-                    <div class="bg-orange-50 p-4 rounded-lg border border-orange-100">
-                        <div class="text-sm text-orange-800">Payments refunded (count)</div>
-                        <div class="text-2xl font-bold text-orange-900">{{ report_data.payments_refunded_count }}</div>
-                    </div>
-                    <div class="bg-red-50 p-4 rounded-lg border border-red-100">
-                        <div class="text-sm text-red-800">Amount refunded (FCFA)</div>
-                        <div class="text-2xl font-bold text-red-900">{{ report_data.amount_refunded }}</div>
-                    </div>
-                    <div class="bg-purple-50 p-4 rounded-lg border border-purple-100">
-                        <div class="text-sm text-purple-800">Rebook groups (new groups from rebook)</div>
-                        <div class="text-2xl font-bold text-purple-900">{{ report_data.rebook_groups }}</div>
-                    </div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div class="border rounded-lg p-4">
-                        <h3 class="text-sm font-semibold text-gray-900 mb-2">BookingGroup status (period)</h3>
-                        <ul class="text-sm text-gray-700 space-y-1">
-                            {% for label, count in report_data.by_status_items %}
-                            <li>{{ label }}: {{ count }}</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    <div class="border rounded-lg p-4">
-                        <h3 class="text-sm font-semibold text-gray-900 mb-2">Refunds &amp; webhooks</h3>
-                        <ul class="text-sm text-gray-700 space-y-1">
-                            <li>Refund requested (group): {{ report_data.refund_requested }}</li>
-                            <li>Refund completed (group): {{ report_data.refund_completed }}</li>
-                            <li>Customer-flagged refund requests: {{ report_data.customer_refund_flags }}</li>
-                            <li>Webhook payment events (processed): {{ report_data.webhook_payment_events }}</li>
-                            <li>Webhook refund events (processed): {{ report_data.webhook_refund_events }}</li>
-                        </ul>
-                    </div>
-                </div>
             </div>
         </div>
     {% endif %}

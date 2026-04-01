@@ -6,10 +6,7 @@ from NelsaApp.views import _mark_webhook_failed, _process_payment_event
 
 
 class Command(BaseCommand):
-    help = (
-        "Retry failed/rejected payment webhook events that are not dead-lettered. "
-        "Processing is replay-safe: payment success and refund branches no-op when already applied."
-    )
+    help = "Retry failed/rejected payment webhook events that are not dead-lettered."
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=100)
