@@ -60,6 +60,8 @@
     </style>
 </head>
 <body class="font-['Inter'] bg-gray-50">
+    {# Required so Django sets the csrftoken cookie; without it, POST /book-seats/ returns 403 CSRF failure. #}
+    <form class="hidden" aria-hidden="true">{% csrf_token %}</form>
     <nav class="bg-white shadow-sm fixed w-full z-50">
         <div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
@@ -370,12 +372,19 @@
                 return;
             }
             
-            // Send booking request
+            const csrfToken = getCsrfToken();
+            if (!csrfToken) {
+                alert('Security token missing. Refresh this page and try again.');
+                return;
+            }
+
+            // Send booking request (same-origin session cookie + CSRF header)
             fetch('/book-seats/', {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken')
+                    'X-CSRFToken': csrfToken
                 },
                 body: JSON.stringify({
                     schedule_id: currentScheduleId,
@@ -384,16 +393,23 @@
                     customer_phone: customerPhone
                 })
             })
-            .then(response => {
-                if (response.redirected || response.url.includes('/Login/')) {
+            .then(async response => {
+                if (response.redirected || (response.url && response.url.includes('/Login/'))) {
                     window.location.href = `/Login/?next=${encodeURIComponent('/booking/')}`;
-                    throw new Error('Redirecting to login');
+                    return;
                 }
-                return response.json();
-            })
-            .then(data => {
+                let data = {};
+                try {
+                    data = await response.json();
+                } catch (e) {
+                    if (response.status === 403) {
+                        alert('Session or security check failed (403). Refresh the page, ensure you are logged in, then try again.');
+                    } else {
+                        alert('Unexpected response from server. Please refresh and try again.');
+                    }
+                    return;
+                }
                 if (data.success) {
-                    // Redirect to payment page
                     window.location.href = `/payment/${data.booking_group_id}/`;
                 } else {
                     alert(data.message || 'Booking failed. Please try again.');
@@ -401,11 +417,10 @@
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('An error occurred. Please try again.');
+                alert('Network error. Check your connection and try again.');
             });
         });
 
-        // Helper function to get CSRF token
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
@@ -419,6 +434,11 @@
                 }
             }
             return cookieValue;
+        }
+
+        /** CSRF for POST: cookie set by {% csrf_token %} on this page, or hidden input value. */
+        function getCsrfToken() {
+            return getCookie('csrftoken') || (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
         }
     </script>
 </body>
