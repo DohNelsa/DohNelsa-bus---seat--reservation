@@ -1,5 +1,4 @@
 {% extends 'NelsaApp/base.html' %}
-{% load static %}
 
 {% block title %}Our Routes - MOGHAMO EXPRESS{% endblock %}
 
@@ -8,7 +7,7 @@
     <!-- Hero Section -->
     <div class="relative">
         <div class="absolute inset-0">
-            <img class="h-64 w-full object-cover" src="{% static 'img2.jpg' %}" alt="MOGHAMO EXPRESS Routes">
+            <img class="h-64 w-full object-cover" src="https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&amp;fit=crop&amp;w=1600&amp;q=80" alt="MOGHAMO EXPRESS Routes">
             <div class="absolute inset-0 bg-gray-900/60 mix-blend-multiply"></div>
         </div>
         <div class="relative max-w-7xl mx-auto py-24 px-4 sm:py-32 sm:px-6 lg:px-8">
@@ -85,7 +84,7 @@
                                     <div class="text-sm font-medium text-gray-900">{{ route.start_location }} → {{ route.end_location }}</div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-500">{{ route.departure_times }}</div>
+                                    <div class="text-sm text-gray-500">{{ route.formatted_departure_times|default:"—" }}</div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <div class="text-sm text-gray-500">{{ route.duration }} hours</div>

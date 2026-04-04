@@ -1468,7 +1468,7 @@ def routes_page(request):
         ).order_by('departure_time').values_list('departure_time', flat=True)
         
         route.formatted_departure_times = ', '.join(
-            [time.strftime('%I:%M %p') for time in departure_times]
+            dt.strftime('%I:%M %p') for dt in departure_times
         )
     
     context = {
