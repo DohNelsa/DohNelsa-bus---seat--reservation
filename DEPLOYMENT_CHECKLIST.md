@@ -37,6 +37,18 @@ Set these in Render service **Environment**.
 
 ## 2) Deploy
 
+### Database migrations (do not skip)
+
+If PostgreSQL is linked but migrations never ran, **only static pages** (like the home page) may work. Any view that queries the database—**Book Rides** and **Routes** included—will return **500** (`ProgrammingError: relation does not exist`).
+
+The **Start Command** must apply migrations before Gunicorn. The repo `Procfile` and `render.yaml` use:
+
+```text
+python manage.py migrate --noinput && gunicorn Nelsaproject.wsgi:application
+```
+
+If your Render service **Start Command** was set manually to only `gunicorn ...`, change it to the line above (or redeploy using this repo’s `Procfile`).
+
 1. Push latest code to `main` (or your deployment branch).
 2. Trigger deploy in Render.
 3. Wait for successful build and startup.

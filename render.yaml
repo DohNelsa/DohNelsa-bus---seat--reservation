@@ -5,7 +5,8 @@ services:
     region: oregon  # Change to your preferred region
     plan: free  # Change to 'starter' or 'standard' for production
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
-    startCommand: gunicorn Nelsaproject.wsgi:application
+    # Migrate at start so PostgreSQL tables exist (booking/routes query DB; homepage does not).
+    startCommand: python manage.py migrate --noinput && gunicorn Nelsaproject.wsgi:application
     envVars:
       - key: DJANGO_SECRET_KEY
         sync: false  # You'll need to set this manually in Render dashboard

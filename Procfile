@@ -1,3 +1,3 @@
-web: gunicorn Nelsaproject.wsgi:application
+web: python manage.py migrate --noinput && gunicorn Nelsaproject.wsgi:application
 
 
