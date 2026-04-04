@@ -1,6 +1,9 @@
+import logging
 from io import BytesIO
 
 from django.shortcuts import render, redirect, get_object_or_404
+
+logger = logging.getLogger(__name__)
 from django.urls import reverse
 from urllib.parse import urlencode
 from . forms import LoginForm, BookingForm
@@ -281,86 +284,97 @@ def booking_page(request):
     # Get all available routes for the filter dropdown
     all_routes = Route.objects.all().order_by('start_location')
     
-    # If no schedules found, create sample schedules for demonstration
-    if not schedules.exists():
-        # Create sample routes if they don't exist
-        routes_data = [
-            {'start_location': 'Yaounde', 'end_location': 'Douala', 'distance': 250, 'duration': 4, 'price': 6000},
-            {'start_location': 'Yaounde', 'end_location': 'Bamenda', 'distance': 350, 'duration': 6, 'price': 9000},
-            {'start_location': 'Douala', 'end_location': 'Limbe', 'distance': 70, 'duration': 1.5, 'price': 4000},
-            {'start_location': 'Douala', 'end_location': 'Buea', 'distance': 60, 'duration': 1, 'price': 3000},
-            {'start_location': 'Bamenda', 'end_location': 'Douala', 'distance': 300, 'duration': 5, 'price': 7000},
-        ]
-        
-        for route_data in routes_data:
-            route, created = Route.objects.get_or_create(
-                start_location=route_data['start_location'],
-                end_location=route_data['end_location'],
-                defaults={
-                    'distance': route_data['distance'],
-                    'duration': route_data['duration'],
-                    'price': route_data['price']
-                }
-            )
-            
-            # Update existing routes with duration and price if they don't have them
-            if not created and (not hasattr(route, 'duration') or not hasattr(route, 'price')):
-                route.duration = route_data['duration']
-                route.price = route_data['price']
-                route.save()
-        
-        # Create sample buses if they don't exist
-        bus_types = ['Luxury', 'Standard', 'Express']
-        for i in range(1, 6):
-            Bus.objects.get_or_create(
-                bus_number=f'BUS-{i:03d}',
-                defaults={
-                    'bus_type': random.choice(bus_types),
-                    'capacity': random.choice([30, 40, 50]),
-                    'is_available': True
-                }
-            )
-        
-        # Create sample schedules for the next 7 days
-        today = timezone.now().date()
-        for i in range(7):
-            current_date = today + timedelta(days=i)
-            
-            # Get all routes and buses
-            routes = Route.objects.all()
-            buses = Bus.objects.filter(is_available=True)
-            
-            # Create 2-3 schedules per day
-            for _ in range(random.randint(2, 3)):
-                route = random.choice(routes)
-                bus = random.choice(buses)
-                
-                # Create departure time between 6 AM and 8 PM
-                hour = random.randint(6, 20)
-                minute = random.choice([0, 15, 30, 45])
-                departure_time = datetime.combine(current_date, time(hour, minute))
-                departure_time = timezone.make_aware(departure_time)
-                
-                # Calculate arrival time based on route duration
-                arrival_time = departure_time + timedelta(hours=route.duration)
-                
-                Schedule.objects.get_or_create(
-                    bus=bus,
-                    route=route,
-                    departure_time=departure_time,
+    # If no schedules match, seed demo data only when not using filters (avoids seed + wrong queryset on every empty search).
+    if not schedules.exists() and not (from_location or to_location or date):
+        try:
+            routes_data = [
+                {'start_location': 'Yaounde', 'end_location': 'Douala', 'distance': 250, 'duration': 4, 'price': 6000},
+                {'start_location': 'Yaounde', 'end_location': 'Bamenda', 'distance': 350, 'duration': 6, 'price': 9000},
+                {'start_location': 'Douala', 'end_location': 'Limbe', 'distance': 70, 'duration': 1.5, 'price': 4000},
+                {'start_location': 'Douala', 'end_location': 'Buea', 'distance': 60, 'duration': 1, 'price': 3000},
+                {'start_location': 'Bamenda', 'end_location': 'Douala', 'distance': 300, 'duration': 5, 'price': 7000},
+            ]
+
+            for route_data in routes_data:
+                route, created = Route.objects.get_or_create(
+                    start_location=route_data['start_location'],
+                    end_location=route_data['end_location'],
                     defaults={
-                        'arrival_time': arrival_time,
-                        'price': route.price,  # Use route's current price
-                        'is_available': True
-                    }
+                        'distance': route_data['distance'],
+                        'duration': route_data['duration'],
+                        'price': route_data['price'],
+                    },
                 )
-        
-        # Refresh the schedules query
+                if not created:
+                    route.duration = route_data['duration']
+                    route.price = route_data['price']
+                    route.save(update_fields=['duration', 'price'])
+
+            bus_types = ['Luxury', 'Standard', 'Express']
+            for i in range(1, 6):
+                Bus.objects.get_or_create(
+                    bus_number=f'BUS-{i:03d}',
+                    defaults={
+                        'bus_type': random.choice(bus_types),
+                        'capacity': random.choice([30, 40, 50]),
+                        'is_available': True,
+                    },
+                )
+
+            route_list = list(Route.objects.all())
+            bus_list = list(Bus.objects.filter(is_available=True))
+            if not bus_list:
+                bus_list = list(Bus.objects.all())
+            if not route_list or not bus_list:
+                logger.warning('booking_page seed skipped: no routes or buses after get_or_create')
+            else:
+                tz = timezone.get_current_timezone()
+                today = timezone.now().date()
+                for day_offset in range(7):
+                    current_date = today + timedelta(days=day_offset)
+                    for _ in range(random.randint(2, 3)):
+                        route = random.choice(route_list)
+                        bus = random.choice(bus_list)
+                        hour = random.randint(6, 20)
+                        minute = random.choice([0, 15, 30, 45])
+                        departure_naive = datetime.combine(current_date, time(hour, minute))
+                        departure_time = timezone.make_aware(departure_naive, tz)
+                        arrival_time = departure_time + timedelta(hours=float(route.duration))
+                        Schedule.objects.get_or_create(
+                            bus=bus,
+                            route=route,
+                            departure_time=departure_time,
+                            defaults={
+                                'arrival_time': arrival_time,
+                                'price': route.price,
+                                'is_available': True,
+                            },
+                        )
+
+            schedules = Schedule.objects.select_related('bus', 'route').filter(
+                departure_time__gte=timezone.now(),
+                is_available=True,
+            ).order_by('departure_time')
+        except Exception:
+            logger.exception('booking_page: demo seed failed; showing empty schedules')
+            schedules = Schedule.objects.none()
+
+    if not schedules.exists():
         schedules = Schedule.objects.select_related('bus', 'route').filter(
             departure_time__gte=timezone.now(),
-            is_available=True
+            is_available=True,
         ).order_by('departure_time')
-    
+        if from_location:
+            schedules = schedules.filter(route__start_location__icontains=from_location)
+        if to_location:
+            schedules = schedules.filter(route__end_location__icontains=to_location)
+        if date:
+            try:
+                date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+                schedules = schedules.filter(departure_time__date=date_obj)
+            except ValueError:
+                pass
+
     context = {
         'schedules': schedules,
         'all_routes': all_routes,
