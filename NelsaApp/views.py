@@ -33,7 +33,7 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.db.models import Sum, Count
-from django.db import transaction, IntegrityError
+from django.db import DatabaseError, transaction, IntegrityError
 from django.core.paginator import Paginator
 from django.utils import timezone
 import json
@@ -258,112 +258,32 @@ def booking_page(request):
     """
     View for the booking page that displays available rides.
     """
-    # Get filter parameters from request
     from_location = request.GET.get('from', '')
     to_location = request.GET.get('to', '')
     date = request.GET.get('date', '')
-    
-    # Base query for schedules with fresh data
-    schedules = Schedule.objects.select_related('bus', 'route').filter(
-        departure_time__gte=timezone.now(),
-        is_available=True
-    ).order_by('departure_time')
-    
-    # Apply filters if provided
-    if from_location:
-        schedules = schedules.filter(route__start_location__icontains=from_location)
-    if to_location:
-        schedules = schedules.filter(route__end_location__icontains=to_location)
-    if date:
-        try:
-            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
-            schedules = schedules.filter(departure_time__date=date_obj)
-        except ValueError:
-            pass
-    
-    # Get all available routes for the filter dropdown
-    all_routes = Route.objects.all().order_by('start_location')
-    
-    # If no schedules match, seed demo data only when not using filters (avoids seed + wrong queryset on every empty search).
-    if not schedules.exists() and not (from_location or to_location or date):
-        try:
-            routes_data = [
-                {'start_location': 'Yaounde', 'end_location': 'Douala', 'distance': 250, 'duration': 4, 'price': 6000},
-                {'start_location': 'Yaounde', 'end_location': 'Bamenda', 'distance': 350, 'duration': 6, 'price': 9000},
-                {'start_location': 'Douala', 'end_location': 'Limbe', 'distance': 70, 'duration': 1.5, 'price': 4000},
-                {'start_location': 'Douala', 'end_location': 'Buea', 'distance': 60, 'duration': 1, 'price': 3000},
-                {'start_location': 'Bamenda', 'end_location': 'Douala', 'distance': 300, 'duration': 5, 'price': 7000},
-            ]
 
-            for route_data in routes_data:
-                route, created = Route.objects.get_or_create(
-                    start_location=route_data['start_location'],
-                    end_location=route_data['end_location'],
-                    defaults={
-                        'distance': route_data['distance'],
-                        'duration': route_data['duration'],
-                        'price': route_data['price'],
-                    },
-                )
-                if not created:
-                    route.duration = route_data['duration']
-                    route.price = route_data['price']
-                    route.save(update_fields=['duration', 'price'])
+    def _booking_fallback(msg):
+        return render(
+            request,
+            'NelsaApp/booking.html',
+            {
+                'schedules': [],
+                'all_routes': [],
+                'from_location': from_location,
+                'to_location': to_location,
+                'date': date,
+                'page_error': msg,
+            },
+        )
 
-            bus_types = ['Luxury', 'Standard', 'Express']
-            for i in range(1, 6):
-                Bus.objects.get_or_create(
-                    bus_number=f'BUS-{i:03d}',
-                    defaults={
-                        'bus_type': random.choice(bus_types),
-                        'capacity': random.choice([30, 40, 50]),
-                        'is_available': True,
-                    },
-                )
-
-            route_list = list(Route.objects.all())
-            bus_list = list(Bus.objects.filter(is_available=True))
-            if not bus_list:
-                bus_list = list(Bus.objects.all())
-            if not route_list or not bus_list:
-                logger.warning('booking_page seed skipped: no routes or buses after get_or_create')
-            else:
-                tz = timezone.get_current_timezone()
-                today = timezone.now().date()
-                for day_offset in range(7):
-                    current_date = today + timedelta(days=day_offset)
-                    for _ in range(random.randint(2, 3)):
-                        route = random.choice(route_list)
-                        bus = random.choice(bus_list)
-                        hour = random.randint(6, 20)
-                        minute = random.choice([0, 15, 30, 45])
-                        departure_naive = datetime.combine(current_date, time(hour, minute))
-                        departure_time = timezone.make_aware(departure_naive, tz)
-                        arrival_time = departure_time + timedelta(hours=float(route.duration))
-                        Schedule.objects.get_or_create(
-                            bus=bus,
-                            route=route,
-                            departure_time=departure_time,
-                            defaults={
-                                'arrival_time': arrival_time,
-                                'price': route.price,
-                                'is_available': True,
-                            },
-                        )
-
-            schedules = Schedule.objects.select_related('bus', 'route').filter(
-                departure_time__gte=timezone.now(),
-                is_available=True,
-            ).order_by('departure_time')
-        except Exception:
-            logger.exception('booking_page: demo seed failed; showing empty schedules')
-            schedules = Schedule.objects.none()
-
-    if not schedules.exists():
+    try:
+        # Base query for schedules with fresh data
         schedules = Schedule.objects.select_related('bus', 'route').filter(
             departure_time__gte=timezone.now(),
             is_available=True,
         ).order_by('departure_time')
+
+        # Apply filters if provided
         if from_location:
             schedules = schedules.filter(route__start_location__icontains=from_location)
         if to_location:
@@ -375,14 +295,117 @@ def booking_page(request):
             except ValueError:
                 pass
 
-    context = {
-        'schedules': schedules,
-        'all_routes': all_routes,
-        'from_location': from_location,
-        'to_location': to_location,
-        'date': date,
-    }
-    return render(request, 'NelsaApp/booking.html', context)
+        # Get all available routes for the filter dropdown
+        all_routes = Route.objects.all().order_by('start_location')
+
+        # If no schedules match, seed demo data only when not using filters (avoids seed + wrong queryset on every empty search).
+        if not schedules.exists() and not (from_location or to_location or date):
+            try:
+                routes_data = [
+                    {'start_location': 'Yaounde', 'end_location': 'Douala', 'distance': 250, 'duration': 4, 'price': 6000},
+                    {'start_location': 'Yaounde', 'end_location': 'Bamenda', 'distance': 350, 'duration': 6, 'price': 9000},
+                    {'start_location': 'Douala', 'end_location': 'Limbe', 'distance': 70, 'duration': 1.5, 'price': 4000},
+                    {'start_location': 'Douala', 'end_location': 'Buea', 'distance': 60, 'duration': 1, 'price': 3000},
+                    {'start_location': 'Bamenda', 'end_location': 'Douala', 'distance': 300, 'duration': 5, 'price': 7000},
+                ]
+
+                for route_data in routes_data:
+                    route, created = Route.objects.get_or_create(
+                        start_location=route_data['start_location'],
+                        end_location=route_data['end_location'],
+                        defaults={
+                            'distance': route_data['distance'],
+                            'duration': route_data['duration'],
+                            'price': route_data['price'],
+                        },
+                    )
+                    if not created:
+                        route.duration = route_data['duration']
+                        route.price = route_data['price']
+                        route.save(update_fields=['duration', 'price'])
+
+                bus_types = ['Luxury', 'Standard', 'Express']
+                for i in range(1, 6):
+                    Bus.objects.get_or_create(
+                        bus_number=f'BUS-{i:03d}',
+                        defaults={
+                            'bus_type': random.choice(bus_types),
+                            'capacity': random.choice([30, 40, 50]),
+                            'is_available': True,
+                        },
+                    )
+
+                route_list = list(Route.objects.all())
+                bus_list = list(Bus.objects.filter(is_available=True))
+                if not bus_list:
+                    bus_list = list(Bus.objects.all())
+                if not route_list or not bus_list:
+                    logger.warning('booking_page seed skipped: no routes or buses after get_or_create')
+                else:
+                    tz = timezone.get_current_timezone()
+                    today = timezone.now().date()
+                    for day_offset in range(7):
+                        current_date = today + timedelta(days=day_offset)
+                        for _ in range(random.randint(2, 3)):
+                            route = random.choice(route_list)
+                            bus = random.choice(bus_list)
+                            hour = random.randint(6, 20)
+                            minute = random.choice([0, 15, 30, 45])
+                            departure_naive = datetime.combine(current_date, time(hour, minute))
+                            departure_time = timezone.make_aware(departure_naive, tz)
+                            arrival_time = departure_time + timedelta(hours=float(route.duration))
+                            Schedule.objects.get_or_create(
+                                bus=bus,
+                                route=route,
+                                departure_time=departure_time,
+                                defaults={
+                                    'arrival_time': arrival_time,
+                                    'price': route.price,
+                                    'is_available': True,
+                                },
+                            )
+
+                schedules = Schedule.objects.select_related('bus', 'route').filter(
+                    departure_time__gte=timezone.now(),
+                    is_available=True,
+                ).order_by('departure_time')
+            except Exception:
+                logger.exception('booking_page: demo seed failed; showing empty schedules')
+                schedules = Schedule.objects.none()
+
+        if not schedules.exists():
+            schedules = Schedule.objects.select_related('bus', 'route').filter(
+                departure_time__gte=timezone.now(),
+                is_available=True,
+            ).order_by('departure_time')
+            if from_location:
+                schedules = schedules.filter(route__start_location__icontains=from_location)
+            if to_location:
+                schedules = schedules.filter(route__end_location__icontains=to_location)
+            if date:
+                try:
+                    date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+                    schedules = schedules.filter(departure_time__date=date_obj)
+                except ValueError:
+                    pass
+
+        context = {
+            'schedules': schedules,
+            'all_routes': all_routes,
+            'from_location': from_location,
+            'to_location': to_location,
+            'date': date,
+        }
+        return render(request, 'NelsaApp/booking.html', context)
+    except DatabaseError:
+        logger.exception('booking_page: database error (often missing migrations on PostgreSQL)')
+        return _booking_fallback(
+            'Could not load rides: the database may need migrations. '
+            'On the server, run: python manage.py migrate'
+        )
+    except Exception:
+        logger.exception('booking_page: unexpected error')
+        return _booking_fallback('Something went wrong loading this page. Please try again in a moment.')
 
 def book_success(request):
     # Get the most recent booking for the current user
@@ -1445,37 +1468,52 @@ def routes_page(request):
     """
     View function for displaying available routes and schedules.
     """
-    # Get all routes with their schedules
-    routes = Route.objects.all().prefetch_related('schedules')
-    
-    # Add additional route information
-    for route in routes:
-        # Get the next available schedule
-        next_schedule = route.schedules.filter(departure_time__gt=timezone.now()).order_by('departure_time').first()
-        
-        # Calculate daily departures
-        daily_departures = route.schedules.filter(
-            departure_time__date=timezone.now().date()
-        ).count()
-        
-        # Add the information to the route object
-        route.next_schedule = next_schedule
-        route.daily_departures = daily_departures
-        
-        # Format departure times for display
-        departure_times = route.schedules.filter(
-            departure_time__date=timezone.now().date()
-        ).order_by('departure_time').values_list('departure_time', flat=True)
-        
-        route.formatted_departure_times = ', '.join(
-            dt.strftime('%I:%M %p') for dt in departure_times
+    try:
+        routes = Route.objects.all().prefetch_related('schedules')
+
+        for route in routes:
+            next_schedule = route.schedules.filter(departure_time__gt=timezone.now()).order_by('departure_time').first()
+
+            daily_departures = route.schedules.filter(
+                departure_time__date=timezone.now().date()
+            ).count()
+
+            route.next_schedule = next_schedule
+            route.daily_departures = daily_departures
+
+            departure_times = route.schedules.filter(
+                departure_time__date=timezone.now().date()
+            ).order_by('departure_time').values_list('departure_time', flat=True)
+
+            route.formatted_departure_times = ', '.join(
+                dt.strftime('%I:%M %p') for dt in departure_times
+            )
+
+        return render(
+            request,
+            'NelsaApp/routes.html',
+            {'routes': routes},
         )
-    
-    context = {
-        'routes': routes,
-    }
-    
-    return render(request, 'NelsaApp/routes.html', context)
+    except DatabaseError:
+        logger.exception('routes_page: database error (often missing migrations on PostgreSQL)')
+        return render(
+            request,
+            'NelsaApp/routes.html',
+            {
+                'routes': [],
+                'page_error': 'Could not load routes: the database may need migrations. On the server, run: python manage.py migrate',
+            },
+        )
+    except Exception:
+        logger.exception('routes_page: unexpected error')
+        return render(
+            request,
+            'NelsaApp/routes.html',
+            {
+                'routes': [],
+                'page_error': 'Something went wrong loading this page. Please try again in a moment.',
+            },
+        )
 
 def contact_page(request):
     """

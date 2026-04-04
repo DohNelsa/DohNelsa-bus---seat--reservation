@@ -4,6 +4,13 @@
 
 {% block content %}
 <div class="pt-20 pb-12">
+    {% if page_error %}
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-4">
+        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900" role="alert">
+            <p class="text-sm font-medium">{{ page_error }}</p>
+        </div>
+    </div>
+    {% endif %}
     <!-- Hero Section -->
     <div class="relative">
         <div class="absolute inset-0">
