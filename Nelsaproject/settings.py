@@ -331,35 +331,66 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = False
     X_FRAME_OPTIONS = 'DENY'
     
-    # Logging configuration for production
-    LOGGING = {
-        'version': 1,
-        'disable_existing_loggers': False,
-        'handlers': {
-            'file': {
-                'level': 'INFO',
-                'class': 'logging.FileHandler',
-                'filename': str(BASE_DIR / 'logs' / 'django.log'),
+    # Production logging: stdout only (Render/Heroku/Docker have no persistent logs/ dir).
+    # Optional file logging only when LOG_TO_FILE=1 and logs/ exists or is created.
+    _log_to_file = os.environ.get("LOG_TO_FILE", "").strip().lower() in ("1", "true", "yes")
+    _log_dir = BASE_DIR / "logs"
+    if _log_to_file:
+        try:
+            _log_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            _log_to_file = False
+
+    if _log_to_file:
+        LOGGING = {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "handlers": {
+                "console": {"class": "logging.StreamHandler"},
+                "file": {
+                    "level": "INFO",
+                    "class": "logging.FileHandler",
+                    "filename": str(_log_dir / "django.log"),
+                },
             },
-        },
-        'loggers': {
-            'django': {
-                'handlers': ['file'],
-                'level': 'INFO',
-                'propagate': True,
+            "root": {"handlers": ["console", "file"], "level": "INFO"},
+            "loggers": {
+                "django": {"handlers": ["console", "file"], "level": "INFO", "propagate": False},
+                "nelsa.audit": {"handlers": ["console", "file"], "level": "INFO", "propagate": False},
+                "nelsa.ops": {"handlers": ["console", "file"], "level": "WARNING", "propagate": False},
             },
-            'nelsa.audit': {
-                'handlers': ['file'],
-                'level': 'INFO',
-                'propagate': False,
+        }
+    else:
+        LOGGING = {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                },
             },
-            'nelsa.ops': {
-                'handlers': ['file'],
-                'level': 'WARNING',
-                'propagate': False,
+            "root": {
+                "handlers": ["console"],
+                "level": "INFO",
             },
-        },
-    }
+            "loggers": {
+                "django": {
+                    "handlers": ["console"],
+                    "level": "INFO",
+                    "propagate": False,
+                },
+                "nelsa.audit": {
+                    "handlers": ["console"],
+                    "level": "INFO",
+                    "propagate": False,
+                },
+                "nelsa.ops": {
+                    "handlers": ["console"],
+                    "level": "WARNING",
+                    "propagate": False,
+                },
+            },
+        }
 else:
     # Development logging
     LOGGING = {
