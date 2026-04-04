@@ -6,7 +6,7 @@ services:
     plan: free  # Change to 'starter' or 'standard' for production
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
     # Migrate at start so PostgreSQL tables exist (booking/routes query DB; homepage does not).
-    startCommand: python manage.py migrate --noinput && gunicorn Nelsaproject.wsgi:application
+    startCommand: python manage.py migrate --noinput && gunicorn Nelsaproject.wsgi:application --bind 0.0.0.0:$PORT --timeout 120 --graceful-timeout 30
     envVars:
       - key: DJANGO_SECRET_KEY
         sync: false  # You'll need to set this manually in Render dashboard
