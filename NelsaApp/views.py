@@ -2,6 +2,7 @@ import logging
 from io import BytesIO
 
 from django.shortcuts import render, redirect, get_object_or_404
+from django.core.exceptions import ObjectDoesNotExist
 
 logger = logging.getLogger(__name__)
 from django.urls import reverse
@@ -65,6 +66,19 @@ def _passenger_email_for_user(user):
     return (user.email or f"user-{user.id}@example.com").strip().lower()
 
 RESERVATION_HOLD_MINUTES = 10
+
+
+def _get_booking_group_payment(booking_group):
+    """
+    Safe access to BookingGroup.payment (reverse OneToOne).
+
+    Do not use hasattr(booking_group, 'payment'): accessing .payment when no row
+    exists raises RelatedObjectDoesNotExist (subclass of ObjectDoesNotExist).
+    """
+    try:
+        return booking_group.payment
+    except ObjectDoesNotExist:
+        return None
 
 
 def release_expired_pending_reservations(schedule=None):
@@ -1736,21 +1750,21 @@ def admin_user_detail(request, user_id):
 def payment_page(request, booking_group_id):
     """View for selecting payment method for a group of bookings."""
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=_passenger_email_for_user(request.user))
-    
-    # Check if booking group already has a payment
-    if hasattr(booking_group, 'payment') and booking_group.payment.status == 'COMPLETED':
+
+    payment = _get_booking_group_payment(booking_group)
+    if payment is not None and payment.status == 'COMPLETED':
         messages.info(request, 'Payment for this booking has already been completed.')
         return redirect('booking_success')
-    
+
     return render(request, 'NelsaApp/payment.html', {'booking_group': booking_group})
 
 @login_required
 def process_payment(request, payment_method, booking_group_id):
     """View for processing payment with the selected method for a group of bookings."""
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=_passenger_email_for_user(request.user))
-    
-    # Check if booking group already has a payment
-    if hasattr(booking_group, 'payment') and booking_group.payment.status == 'COMPLETED':
+
+    payment = _get_booking_group_payment(booking_group)
+    if payment is not None and payment.status == 'COMPLETED':
         messages.info(request, 'Payment for this booking has already been completed.')
         return redirect('booking_success')
     
