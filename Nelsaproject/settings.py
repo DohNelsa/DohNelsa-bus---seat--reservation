@@ -121,6 +121,13 @@ if DEPLOYMENT_ENV in ("production", "staging") and DATABASES["default"]["ENGINE"
     raise ImproperlyConfigured("SQLite is not supported in production/staging. Set DATABASE_URL to PostgreSQL.")
 
 
+# Authentication — custom backend first so login accepts username case / email
+AUTHENTICATION_BACKENDS = [
+    "NelsaApp.auth_backend.EmailOrUsernameInsensitiveBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
