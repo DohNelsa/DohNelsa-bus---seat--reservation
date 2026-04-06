@@ -3,6 +3,7 @@ from io import BytesIO
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
+from django.utils.http import url_has_allowed_host_and_scheme
 
 logger = logging.getLogger(__name__)
 from django.urls import reverse
@@ -226,31 +227,32 @@ def register(request):
         form = RegistrationForm()
     return render(request, 'NelsaApp/register.html', {'form':form})
 def Login_view(request):
+    """
+    Log in using AuthenticationForm. Use form.get_user() after is_valid() — the form
+    already authenticates; a second authenticate() call is redundant and can fail
+    with some auth backends.
+    """
     if request.method == 'POST':
         form = LoginForm(request=request, data=request.POST)
         if form.is_valid():
-            username = form.cleaned_data.get('username')
-            password = form.cleaned_data.get('password')
-            user = authenticate(username=username, password=password)
-            if user is not None:
-                login(request, user)
-                messages.success(request, f"Welcome back, {user.username}!")
-                
-                # Redirect based on user type
-                if user.is_staff:
-                    return redirect('admin_dashboard')
-                else:
-                    # Check if there's a next parameter in the URL
-                    next_url = request.GET.get('next')
-                    if next_url:
-                        return redirect(next_url)
-                    else:
-                        return redirect('index')
-            else:
-                messages.error(request, "Invalid username or password.")
+            user = form.get_user()
+            login(request, user)
+            messages.success(request, f"Welcome back, {user.username}!")
+
+            if user.is_staff:
+                return redirect('admin_dashboard')
+
+            next_url = (request.POST.get('next') or request.GET.get('next') or '').strip()
+            if next_url and url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host(), *settings.ALLOWED_HOSTS},
+                require_https=request.is_secure(),
+            ):
+                return redirect(next_url)
+            return redirect('index')
     else:
         form = LoginForm()
-    return render(request, 'NelsaApp/login.html', {'form':form})
+    return render(request, 'NelsaApp/login.html', {'form': form})
 
 def logout_view(request):
     logout(request)

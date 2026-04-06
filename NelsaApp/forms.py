@@ -6,8 +6,29 @@ from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
 
 class LoginForm(AuthenticationForm):
-    username = forms.CharField(widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Username'}))
-    password = forms.CharField(widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'Password'}))
+    username = forms.CharField(
+        label='Username',
+        widget=forms.TextInput(
+            attrs={
+                'class': 'login-field',
+                'placeholder': 'Username',
+                'autocomplete': 'username',
+                'autocapitalize': 'none',
+                'style': 'width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; height: 48px; padding: 0 16px; margin-top: 8px;',
+            }
+        ),
+    )
+    password = forms.CharField(
+        label='Password',
+        widget=forms.PasswordInput(
+            attrs={
+                'class': 'login-field',
+                'placeholder': 'Password',
+                'autocomplete': 'current-password',
+                'style': 'width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; height: 48px; padding: 0 16px; margin-top: 8px;',
+            }
+        ),
+    )
 
 class RegistrationForm(UserCreationForm):
     email = forms.EmailField(
