@@ -4,38 +4,9 @@ from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
 
 class LoginForm(AuthenticationForm):
-    """
-    Styling only. Login behaviour (username case / email) is handled by
-    NelsaApp.auth_backend.EmailOrUsernameInsensitiveBackend in AUTHENTICATION_BACKENDS.
-    Do not replace parent username/password fields with plain CharField.
-    """
+    username = forms.CharField(widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Username'}))
+    password = forms.CharField(widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'Password'}))
 
-    field_css = (
-        'width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; '
-        'height: 48px; padding: 0 16px; margin-top: 8px;'
-    )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['username'].label = 'Username or email'
-        self.fields['username'].widget.attrs.update(
-            {
-                'class': 'login-field',
-                'placeholder': 'Username or email',
-                'autocomplete': 'username',
-                'autocapitalize': 'none',
-                'style': self.field_css,
-            }
-        )
-        self.fields['password'].label = 'Password'
-        self.fields['password'].widget.attrs.update(
-            {
-                'class': 'login-field',
-                'placeholder': 'Password',
-                'autocomplete': 'current-password',
-                'style': self.field_css,
-            }
-        )
 
 class RegistrationForm(UserCreationForm):
     email = forms.EmailField(

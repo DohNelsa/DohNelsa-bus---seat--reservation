@@ -3,67 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - MOGHAMO EXPRESS</title>
+    <title>Login - Online Bus Booking</title>
 </head>
-<body style="width: 100%; min-height: 100vh; padding: 0 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: #f1f5f9;">
+<body style="width: 100%; height: 100vh; padding: 0 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: #f1f5f9;">
 
-    <div style="width: 100%; max-width: 480px; min-height: auto; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); padding: 40px; display: flex; flex-direction: column; justify-content: space-between; border-radius: 8px;">
+    <!-- Login Container -->
+    <div style="width: 50%; height: 650px; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); padding: 40px; display: flex; flex-direction: column; justify-content: space-between; border-radius: 8px;">
+        <!-- Heading -->
         <h1 style="text-align: center; font-size: 2rem; font-weight: bold;">Login</h1>
 
-        <p style="font-size: 0.9rem; color: #475569; text-align: center; margin: 12px 0 0;">
-            No account on this site yet? <a href="{% url 'user-register' %}" style="color: #2563eb;">Register</a>.
-            Server admin: run <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">python manage.py create_demo_user</code> to create test credentials.
-        </p>
+        <!-- Login Form -->
+        <form id="loginForm" method = "POST"style="width: 100%; height: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+            <!-- Username Field -->
+            <div style="margin: 20px 0; width: 100%;">
+                <label for="username" style="font-size: 1rem; font-weight: 500;">Username:</label>
+                <input type="text" id="username" name="username" required style="width: 100%; border: 1px solid #ccc; border-radius: 8px; height: 64px; padding: 0 20px; margin-top: 8px;">
+            </div>
 
-        {% if messages %}
-        <ul style="list-style: none; padding: 0; margin: 16px 0;">
-            {% for message in messages %}
-            <li style="padding: 10px; border-radius: 8px; margin-bottom: 8px; {% if message.tags == 'success' %}background: #dcfce7; color: #166534;{% elif message.tags == 'error' %}background: #fee2e2; color: #991b1b;{% else %}background: #e0f2fe; color: #0369a1;{% endif %}">{{ message }}</li>
-            {% endfor %}
-        </ul>
-        {% endif %}
+            <!-- Password Field -->
+            <div style="margin: 20px 0; width: 100%;">
+                <label for="password" style="font-size: 1rem; font-weight: 500;">Password:</label>
+                <input type="password" id="password" name="password" required style="width: 100%; border: 1px solid #ccc; border-radius: 8px; height: 64px; padding: 0 20px; margin-top: 8px;">
+            </div>
 
-        <form method="post" action="{% url 'Login' %}" style="width: 100%; display: flex; flex-direction: column; align-items: stretch;">
+            <!-- Submit Button -->
             {% csrf_token %}
-            {% if request.GET.next %}
-            <input type="hidden" name="next" value="{{ request.GET.next }}">
-            {% endif %}
-
-            {% if form.non_field_errors %}
-            <div style="color: #991b1b; background: #fee2e2; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.95rem;">
-                {{ form.non_field_errors }}
-            </div>
-            {% endif %}
-
-            <div style="margin: 12px 0; width: 100%;">
-                <label for="id_username" style="font-size: 1rem; font-weight: 500;">Username or email</label>
-                {{ form.username }}
-            </div>
-
-            <div style="margin: 12px 0; width: 100%;">
-                <label for="id_password" style="font-size: 1rem; font-weight: 500;">Password</label>
-                {{ form.password }}
-            </div>
-
-            {% if form.username.errors or form.password.errors %}
-            <div style="color: #991b1b; font-size: 0.9rem; margin-bottom: 8px;">
-                {{ form.username.errors }}
-                {{ form.password.errors }}
-            </div>
-            {% endif %}
-
-            <button type="submit" style="width: 100%; padding: 14px 0; margin-top: 16px; font-size: 1.1rem; border-radius: 8px; background-color: #2563eb; color: white; border: none; cursor: pointer; font-weight: 600;">
+            <button type="submit" style="width: 100%; padding: 16px 0; display: flex; justify-content: center; align-items: center; font-size: 1.25rem; height: 48px; border-radius: 8px; background-color: #e2e8f0; border: none; cursor: pointer;">
                 Login
             </button>
         </form>
 
-        <p style="text-align: center; margin-top: 24px;">
-            Don't have an account? <a href="{% url 'user-register' %}" style="color: #2563eb; text-decoration: none;">Register</a>
-        </p>
-        <p style="text-align: center; margin-top: 8px;">
-            <a href="{% url 'index' %}" style="color: #64748b; text-decoration: none; font-size: 0.9rem;">Back to home</a>
+        <!-- Error Message -->
+        <p id="error-message" style="color: red; text-align: center;"></p>
+
+        <!-- Register Link -->
+        <p style="text-align: center;">
+            Don't have an account? <a href="{% url 'user-register' %}" style="color: #3b82f6; text-decoration: none;">Register</a>
         </p>
     </div>
 
 </body>
 </html>
+
