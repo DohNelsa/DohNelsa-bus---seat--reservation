@@ -1,34 +1,54 @@
-from django import forms       
-from django.urls import path
-from . import views
+from django import forms
 from .models import Login, Booking, Passenger
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
 
 class LoginForm(AuthenticationForm):
-    username = forms.CharField(
-        label='Username',
-        widget=forms.TextInput(
-            attrs={
+    """
+    Do not replace AuthenticationForm's username/password fields with plain CharField:
+    the parent uses UsernameField and password with strip=False; replacing them breaks
+    authentication for otherwise valid credentials.
+
+    Optional: if the user types an email in the username box, resolve it to User.username
+    so login works with email or username.
+    """
+
+    field_css = (
+        'width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; '
+        'height: 48px; padding: 0 16px; margin-top: 8px;'
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['username'].label = 'Username or email'
+        self.fields['username'].widget.attrs.update(
+            {
                 'class': 'login-field',
-                'placeholder': 'Username',
+                'placeholder': 'Username or email',
                 'autocomplete': 'username',
                 'autocapitalize': 'none',
-                'style': 'width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; height: 48px; padding: 0 16px; margin-top: 8px;',
+                'style': self.field_css,
             }
-        ),
-    )
-    password = forms.CharField(
-        label='Password',
-        widget=forms.PasswordInput(
-            attrs={
+        )
+        self.fields['password'].label = 'Password'
+        self.fields['password'].widget.attrs.update(
+            {
                 'class': 'login-field',
                 'placeholder': 'Password',
                 'autocomplete': 'current-password',
-                'style': 'width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; height: 48px; padding: 0 16px; margin-top: 8px;',
+                'style': self.field_css,
             }
-        ),
-    )
+        )
+
+    def clean_username(self):
+        value = (self.cleaned_data.get('username') or '').strip()
+        if not value:
+            return value
+        if '@' in value:
+            user = User.objects.filter(email__iexact=value).first()
+            if user:
+                return user.username
+        return value
 
 class RegistrationForm(UserCreationForm):
     email = forms.EmailField(
