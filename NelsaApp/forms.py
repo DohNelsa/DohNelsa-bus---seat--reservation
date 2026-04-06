@@ -1,4 +1,5 @@
 from django import forms
+from django.contrib.auth import authenticate
 from .models import Login, Booking, Passenger
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
@@ -49,6 +50,41 @@ class LoginForm(AuthenticationForm):
             if user:
                 return user.username
         return value
+
+    def clean(self):
+        """
+        Extend AuthenticationForm.clean(): ModelBackend matches username case-sensitively,
+        so the correct password fails if casing differs. Retry with case-insensitive
+        username and with email lookup before showing the generic invalid-login error.
+        """
+        username = self.cleaned_data.get('username')
+        password = self.cleaned_data.get('password')
+
+        if username is None or not password:
+            return self.cleaned_data
+
+        self.user_cache = authenticate(
+            self.request, username=username, password=password
+        )
+        if self.user_cache is None:
+            lookup = (username or '').strip()
+            if lookup:
+                u = User.objects.filter(username__iexact=lookup).first()
+                if u is not None:
+                    self.user_cache = authenticate(
+                        self.request, username=u.username, password=password
+                    )
+                if self.user_cache is None:
+                    u = User.objects.filter(email__iexact=lookup).first()
+                    if u is not None:
+                        self.user_cache = authenticate(
+                            self.request, username=u.username, password=password
+                        )
+        if self.user_cache is None:
+            raise self.get_invalid_login_error()
+        self.confirm_login_allowed(self.user_cache)
+
+        return self.cleaned_data
 
 class RegistrationForm(UserCreationForm):
     email = forms.EmailField(
