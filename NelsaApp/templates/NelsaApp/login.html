@@ -10,6 +10,11 @@
     <div style="width: 100%; max-width: 480px; min-height: auto; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); padding: 40px; display: flex; flex-direction: column; justify-content: space-between; border-radius: 8px;">
         <h1 style="text-align: center; font-size: 2rem; font-weight: bold;">Login</h1>
 
+        <p style="font-size: 0.9rem; color: #475569; text-align: center; margin: 12px 0 0;">
+            No account on this site yet? <a href="{% url 'user-register' %}" style="color: #2563eb;">Register</a>.
+            Server admin: run <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">python manage.py create_demo_user</code> to create test credentials.
+        </p>
+
         {% if messages %}
         <ul style="list-style: none; padding: 0; margin: 16px 0;">
             {% for message in messages %}

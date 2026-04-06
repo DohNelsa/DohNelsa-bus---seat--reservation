@@ -228,28 +228,47 @@ def register(request):
     return render(request, 'NelsaApp/register.html', {'form':form})
 def Login_view(request):
     """
-    Log in using AuthenticationForm. Use form.get_user() after is_valid() — the form
-    already authenticates; a second authenticate() call is redundant and can fail
-    with some auth backends.
+    Authenticate with authenticate() + login() directly. Relying only on
+    AuthenticationForm.is_valid() can still show false failures with custom
+    AUTHENTICATION_BACKENDS; the view matches credentials against all backends.
     """
     if request.method == 'POST':
         form = LoginForm(request=request, data=request.POST)
-        if form.is_valid():
-            user = form.get_user()
-            login(request, user)
-            messages.success(request, f"Welcome back, {user.username}!")
+        username = (request.POST.get('username') or '').strip()
+        password = request.POST.get('password')
+        if password is None:
+            password = ''
 
-            if user.is_staff:
-                return redirect('admin_dashboard')
+        user = None
+        if username and password:
+            user = authenticate(request, username=username, password=password)
 
-            next_url = (request.POST.get('next') or request.GET.get('next') or '').strip()
-            if next_url and url_has_allowed_host_and_scheme(
-                next_url,
-                allowed_hosts={request.get_host(), *settings.ALLOWED_HOSTS},
-                require_https=request.is_secure(),
-            ):
-                return redirect(next_url)
-            return redirect('index')
+        if user is not None:
+            if not user.is_active:
+                messages.error(request, 'This account is inactive. Contact support.')
+            else:
+                login(request, user)
+                messages.success(request, f'Welcome back, {user.username}!')
+                if user.is_staff:
+                    return redirect('admin_dashboard')
+                next_url = (request.POST.get('next') or request.GET.get('next') or '').strip()
+                if next_url and url_has_allowed_host_and_scheme(
+                    next_url,
+                    allowed_hosts={request.get_host(), *settings.ALLOWED_HOSTS},
+                    require_https=request.is_secure(),
+                ):
+                    return redirect(next_url)
+                return redirect('index')
+        else:
+            if not username or not password:
+                messages.error(request, 'Please enter both username (or email) and password.')
+            else:
+                messages.error(
+                    request,
+                    "That username/email and password do not match any account on this server. "
+                    "Register first, or run: python manage.py create_demo_user (Render Shell / local terminal), "
+                    "then use the username and password it prints.",
+                )
     else:
         form = LoginForm()
     return render(request, 'NelsaApp/login.html', {'form': form})
