@@ -404,7 +404,7 @@
                     return;
                 }
                 if (data.success) {
-                    window.location.href = `/payment/${data.booking_group_id}/`;
+                    window.location.href = data.payment_url || `/payment/${data.booking_group_id}/`;
                 } else {
                     alert(data.message || 'Booking failed. Please try again.');
                 }

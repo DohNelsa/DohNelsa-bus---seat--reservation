@@ -674,7 +674,8 @@ def book_seats_api(request):
         return JsonResponse({
             'success': True, 
             'message': 'Booking successful',
-            'booking_group_id': booking_group.id
+            'booking_group_id': booking_group.id,
+            'payment_url': reverse('payment', args=[booking_group.id]),
         })
     
     except Exception as e:
