@@ -49,8 +49,6 @@ from django.conf import settings
 from django.http import FileResponse
 import os
 
-from .notifications import send_booking_confirmed_email
-from .sms import send_booking_confirmed_sms
 import hashlib
 import hmac
 
@@ -575,37 +573,45 @@ def book_seats_api(request):
         if not request.user.is_authenticated:
             return JsonResponse({'success': False, 'message': 'You must be logged in to book seats'})
         
-        # Passenger contact is mandatory before booking (for SMS confirmations).
+        # Full name is required; phone is optional.
         customer_name = (data.get('customer_name') or '').strip()
         customer_phone_raw = (data.get('customer_phone') or '').strip()
-        if not customer_name or not customer_phone_raw:
+        if not customer_name:
             return JsonResponse(
                 {
                     'success': False,
-                    'message': 'Please enter your Full Name and a Phone number starting with +237 before booking.',
-                },
-                status=400,
-            )
-
-        normalized_phone = normalize_cameroon_phone(customer_phone_raw)
-        if not normalized_phone:
-            return JsonResponse(
-                {
-                    'success': False,
-                    'message': 'Invalid phone number. Phone must start with +237 and contain 8-9 digits after +237.',
+                    'message': 'Please enter your Full Name before booking.',
                 },
                 status=400,
             )
 
         passenger_email = _passenger_email_for_user(request.user)
+        normalized_phone = None
         try:
+            existing_passenger = Passenger.objects.filter(email=passenger_email).first()
+            if customer_phone_raw:
+                normalized_phone = normalize_cameroon_phone(customer_phone_raw)
+                if not normalized_phone:
+                    return JsonResponse(
+                        {
+                            'success': False,
+                            'message': 'Invalid phone number. Phone must start with +237 and contain 8-9 digits after +237.',
+                        },
+                        status=400,
+                    )
+            elif existing_passenger and existing_passenger.phone:
+                normalized_phone = existing_passenger.phone
+            else:
+                normalized_phone = f"+2376{(request.user.id or 0) % 100000000:08d}"
+
             passenger, created = Passenger.objects.get_or_create(
                 email=passenger_email,
                 defaults={'name': customer_name, 'phone': normalized_phone},
             )
             if not created:
                 passenger.name = customer_name
-                passenger.phone = normalized_phone
+                if customer_phone_raw and passenger.phone != normalized_phone:
+                    passenger.phone = normalized_phone
                 passenger.save()
         except IntegrityError:
             return JsonResponse(
@@ -820,10 +826,9 @@ def admin_confirm_booking(request, booking_group_id):
         booking_group.save()
 
         enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_EMAIL")
-        enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_SMS")
         messages.success(
             request,
-            f"Booking Group #{booking_group.id} confirmed. Email/SMS notifications queued.",
+            f"Booking Group #{booking_group.id} confirmed. Email notification queued.",
         )
         log_admin_action(
             request,
