@@ -50,6 +50,7 @@ urlpatterns = [
     path('admin-payment-webhooks/<int:event_pk>/retry/', views.admin_retry_payment_webhook, name='admin_retry_payment_webhook'),
     path('manage-reports/', views.admin_reports, name='admin_reports'),
     path('payment/<int:booking_group_id>/', views.payment_page, name='payment'),
+    path('payment/<int:booking_group_id>/start/', views.start_payment, name='start_payment'),
     path('process-payment/<str:payment_method>/<int:booking_group_id>/', views.process_payment, name='process_payment'),
     path('verify-payment/', views.verify_payment, name='verify_payment'),
     path('webhooks/payment/', views.payment_webhook, name='payment_webhook'),

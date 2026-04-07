@@ -29,7 +29,7 @@ from .models import (
     Support,
 )
 from django.views.decorators.csrf import csrf_exempt
-from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404, JsonResponse
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
@@ -77,6 +77,26 @@ def _get_booking_group_payment(booking_group):
         return booking_group.payment
     except ObjectDoesNotExist:
         return None
+
+
+def _get_booking_group_for_customer_checkout(request, booking_group_id):
+    """
+    Allow payment pages when the user owns the booking (logged-in) or when this
+    booking was just created in the same browser session (guest checkout).
+    """
+    booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
+    if request.user.is_authenticated:
+        if booking_group.passenger.email.strip().lower() != _passenger_email_for_user(request.user):
+            raise Http404
+        return booking_group
+    checkout_raw = request.session.get('checkout_booking_group_id')
+    try:
+        checkout_id = int(checkout_raw)
+    except (TypeError, ValueError):
+        checkout_id = None
+    if checkout_id == booking_group.id:
+        return booking_group
+    raise Http404
 
 
 def release_expired_pending_reservations(schedule=None):
@@ -541,9 +561,8 @@ def get_seats(request, schedule_id):
 
     return JsonResponse({'seats': seats})
 
-@login_required
 def book_seats_api(request):
-    """API endpoint to book seats."""
+    """API endpoint to book seats (logged-in or guest; guest continues to payment via session)."""
     if request.method != 'POST':
         return JsonResponse({'success': False, 'message': 'Invalid request method'})
     
@@ -569,13 +588,10 @@ def book_seats_api(request):
         # Auto-release expired unpaid pending reservations before seat checks.
         release_expired_pending_reservations(schedule=schedule)
         
-        # Check if user is authenticated
-        if not request.user.is_authenticated:
-            return JsonResponse({'success': False, 'message': 'You must be logged in to book seats'})
-        
         # Full name is required; phone is optional.
         customer_name = (data.get('customer_name') or '').strip()
         customer_phone_raw = (data.get('customer_phone') or '').strip()
+        customer_email_raw = (data.get('customer_email') or '').strip().lower()
         if not customer_name:
             return JsonResponse(
                 {
@@ -585,7 +601,18 @@ def book_seats_api(request):
                 status=400,
             )
 
-        passenger_email = _passenger_email_for_user(request.user)
+        if request.user.is_authenticated:
+            passenger_email = _passenger_email_for_user(request.user)
+        else:
+            if not customer_email_raw or '@' not in customer_email_raw:
+                return JsonResponse(
+                    {
+                        'success': False,
+                        'message': 'Please enter a valid email address to continue to payment.',
+                    },
+                    status=400,
+                )
+            passenger_email = customer_email_raw
         normalized_phone = None
         try:
             existing_passenger = Passenger.objects.filter(email=passenger_email).first()
@@ -669,6 +696,9 @@ def book_seats_api(request):
                     status='Pending',
                     booking_group=booking_group
                 )
+
+        request.session['checkout_booking_group_id'] = booking_group.id
+        request.session.modified = True
         
         # Return success with the booking group ID to redirect to payment
         return JsonResponse({
@@ -676,6 +706,7 @@ def book_seats_api(request):
             'message': 'Booking successful',
             'booking_group_id': booking_group.id,
             'payment_url': reverse('payment', args=[booking_group.id]),
+            'redirect_url': reverse('payment', args=[booking_group.id]),
         })
     
     except Exception as e:
@@ -1750,10 +1781,9 @@ def admin_user_detail(request, user_id):
     
     return render(request, 'NelsaApp/admin_user_detail.html', context)
 
-@login_required
 def payment_page(request, booking_group_id):
     """View for selecting payment method for a group of bookings."""
-    booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=_passenger_email_for_user(request.user))
+    booking_group = _get_booking_group_for_customer_checkout(request, booking_group_id)
 
     payment = _get_booking_group_payment(booking_group)
     if payment is not None and payment.status == 'COMPLETED':
@@ -1762,10 +1792,27 @@ def payment_page(request, booking_group_id):
 
     return render(request, 'NelsaApp/payment.html', {'booking_group': booking_group})
 
-@login_required
+@require_POST
+def start_payment(request, booking_group_id):
+    """Start payment by selected method and redirect to gateway instructions."""
+    booking_group = _get_booking_group_for_customer_checkout(request, booking_group_id)
+
+    payment = _get_booking_group_payment(booking_group)
+    if payment is not None and payment.status == 'COMPLETED':
+        messages.info(request, 'Payment for this booking has already been completed.')
+        return redirect('booking_success')
+
+    payment_method = (request.POST.get('payment_method') or '').strip().upper()
+    valid_methods = [method[0] for method in Payment.PAYMENT_METHODS]
+    if payment_method not in valid_methods:
+        messages.error(request, 'Please select a valid payment method.')
+        return redirect('payment', booking_group_id=booking_group_id)
+
+    return redirect('process_payment', payment_method=payment_method, booking_group_id=booking_group_id)
+
 def process_payment(request, payment_method, booking_group_id):
     """View for processing payment with the selected method for a group of bookings."""
-    booking_group = get_object_or_404(BookingGroup, id=booking_group_id, passenger__email=_passenger_email_for_user(request.user))
+    booking_group = _get_booking_group_for_customer_checkout(request, booking_group_id)
 
     payment = _get_booking_group_payment(booking_group)
     if payment is not None and payment.status == 'COMPLETED':
@@ -1783,7 +1830,6 @@ def process_payment(request, payment_method, booking_group_id):
         'payment_method': payment_method
     })
 
-@login_required
 def verify_payment(request):
     """User submits payment proof; final verification is done by provider webhook."""
     if request.method != 'POST':
@@ -1791,17 +1837,22 @@ def verify_payment(request):
     
     try:
         data = json.loads(request.body)
-        booking_group_id = data.get('booking_group_id')
+        try:
+            booking_group_id = int(data.get('booking_group_id'))
+        except (TypeError, ValueError):
+            return JsonResponse({'success': False, 'message': 'Missing or invalid booking reference'})
         payment_method = data.get('payment_method')
         transaction_id = data.get('transaction_id')
         
         if not all([booking_group_id, payment_method, transaction_id]):
             return JsonResponse({'success': False, 'message': 'Missing required data'})
         
-        booking_group = get_object_or_404(
-            BookingGroup,
-            id=booking_group_id,
-            passenger__email=_passenger_email_for_user(request.user),
+        booking_group = _get_booking_group_for_customer_checkout(request, booking_group_id)
+
+        submitter = (
+            request.user.username
+            if request.user.is_authenticated
+            else (booking_group.passenger.email or 'guest')
         )
 
         # Only admin can confirm a booking (booking remains Pending after payment verification).
@@ -1821,7 +1872,7 @@ def verify_payment(request):
                 'status': 'PENDING',
                 'payment_details': {
                     'submitted_at': timezone.now().isoformat(),
-                    'submitted_by': request.user.username
+                    'submitted_by': submitter,
                 }
             }
         )
@@ -1831,7 +1882,7 @@ def verify_payment(request):
             payment.status = 'PENDING'
             payment.payment_details = {
                 'submitted_at': timezone.now().isoformat(),
-                'submitted_by': request.user.username
+                'submitted_by': submitter,
             }
             payment.save()
         
@@ -1848,6 +1899,11 @@ def verify_payment(request):
             }
         )
     
+    except Http404:
+        return JsonResponse(
+            {'success': False, 'message': 'This booking is not available for payment.'},
+            status=404,
+        )
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)})
 

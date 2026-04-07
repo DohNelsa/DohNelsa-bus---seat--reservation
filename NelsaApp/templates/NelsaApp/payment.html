@@ -56,13 +56,15 @@
                     </div>
                 </div>
 
+                <form method="post" action="{% url 'start_payment' booking_group.id %}">
+                    {% csrf_token %}
                 <div class="mb-6">
                     <h3 class="text-lg font-medium text-gray-900">Select Payment Method</h3>
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <!-- MTN Mobile Money -->
                         <div class="relative border border-gray-300 rounded-lg p-4 flex flex-col cursor-pointer hover:border-blue-500 transition-colors duration-200 payment-method" data-method="MOMO">
                             <div class="flex items-center h-12">
-                                <input id="momo" name="payment-method" type="radio" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
+                                <input id="momo" name="payment_method" value="MOMO" type="radio" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
                                 <label for="momo" class="ml-3 block text-sm font-medium text-gray-700">
                                     <span class="absolute inset-0" aria-hidden="true"></span>
                                     MTN Mobile Money
@@ -76,7 +78,7 @@
                         <!-- Orange Money -->
                         <div class="relative border border-gray-300 rounded-lg p-4 flex flex-col cursor-pointer hover:border-blue-500 transition-colors duration-200 payment-method" data-method="ORANGE">
                             <div class="flex items-center h-12">
-                                <input id="orange" name="payment-method" type="radio" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
+                                <input id="orange" name="payment_method" value="ORANGE" type="radio" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
                                 <label for="orange" class="ml-3 block text-sm font-medium text-gray-700">
                                     <span class="absolute inset-0" aria-hidden="true"></span>
                                     Orange Money
@@ -90,7 +92,7 @@
                         <!-- Credit/Debit Card -->
                         <div class="relative border border-gray-300 rounded-lg p-4 flex flex-col cursor-pointer hover:border-blue-500 transition-colors duration-200 payment-method" data-method="CARD">
                             <div class="flex items-center h-12">
-                                <input id="card" name="payment-method" type="radio" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
+                                <input id="card" name="payment_method" value="CARD" type="radio" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
                                 <label for="card" class="ml-3 block text-sm font-medium text-gray-700">
                                     <span class="absolute inset-0" aria-hidden="true"></span>
                                     Credit/Debit Card
@@ -105,11 +107,12 @@
                 </div>
                 
                 <div class="mt-6">
-                    <button id="proceedToPayment" class="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200">
+                    <button type="submit" id="proceedToPayment" class="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200">
                         Proceed to Payment
                     </button>
                 </div>
             </div>
+                </form>
         </div>
     </div>
 </div>
@@ -142,15 +145,12 @@
             });
         });
         
-        // Handle proceed to payment
-        proceedButton.addEventListener('click', function() {
+        // Keep submit robust: JS only validates, server does final redirect.
+        proceedButton.addEventListener('click', function(event) {
             if (!selectedMethod) {
+                event.preventDefault();
                 alert('Please select a payment method');
-                return;
             }
-            
-            // Redirect to payment processing
-            window.location.href = `/process-payment/${selectedMethod}/{{ booking_group.id }}/`;
         });
     });
 </script>

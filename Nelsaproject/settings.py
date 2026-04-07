@@ -139,6 +139,11 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Auth redirects: use project login/logout routes instead of Django defaults (/accounts/login/).
+LOGIN_URL = '/Login/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/

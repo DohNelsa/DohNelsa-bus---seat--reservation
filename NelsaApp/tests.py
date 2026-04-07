@@ -131,7 +131,12 @@ class HardeningTests(TestCase):
         Booking.objects.create(passenger=self.passenger, schedule=self.schedule, seat_number=4, status="Pending", booking_group=bg)
         resp = self.client.post(reverse("admin_confirm_booking", kwargs={"booking_group_id": bg.id}))
         self.assertEqual(resp.status_code, 302)
-        self.assertEqual(NotificationJob.objects.filter(booking_group=bg, status="PENDING").count(), 2)
+        self.assertEqual(
+            NotificationJob.objects.filter(
+                booking_group=bg, status="PENDING", job_type="BOOKING_CONFIRMED_EMAIL"
+            ).count(),
+            1,
+        )
 
     def test_rebook_flow_creates_new_group_and_cancels_old(self):
         self._grant(self.staff, "manage_refunds_rebooks")

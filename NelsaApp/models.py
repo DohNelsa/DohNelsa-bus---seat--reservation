@@ -130,6 +130,22 @@ class BookingGroup(models.Model):
     )
     admin_notes = models.TextField(blank=True, null=True)
 
+    # Customer-facing notification pipeline (email/SMS jobs); must have a default for NOT NULL DB columns.
+    CUSTOMER_NOTIFICATION_STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('QUEUED', 'Queued'),
+        ('SENT', 'Sent'),
+        ('FAILED', 'Failed'),
+        ('SKIPPED', 'Skipped'),
+    ]
+    customer_notification_status = models.CharField(
+        max_length=20,
+        choices=CUSTOMER_NOTIFICATION_STATUS_CHOICES,
+        default='PENDING',
+        db_index=True,
+        help_text='Tracks post-booking customer notifications (email/SMS).',
+    )
+
     def __str__(self):
         return f"Booking Group {self.id} - {self.passenger.name} ({self.bookings.count()} seats)"
 
