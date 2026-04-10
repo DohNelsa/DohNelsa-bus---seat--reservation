@@ -57,7 +57,12 @@ from .jobs import enqueue_notification_job
 from .monitoring import send_ops_alert
 from .rbac import require_admin_portal, require_perm, user_has_perm
 from .security import ip_allowlist, rate_limit
-from .tickets import sign_booking_group_ticket, verify_ticket_token
+from .tickets import (
+    sign_booking_group_ticket,
+    sign_checkout_token,
+    verify_checkout_token,
+    verify_ticket_token,
+)
 
 def _passenger_email_for_user(user):
     """Passenger email key; must match book_seats_api (handles empty User.email)."""
@@ -81,21 +86,30 @@ def _get_booking_group_payment(booking_group):
 
 def _get_booking_group_for_customer_checkout(request, booking_group_id):
     """
-    Allow payment pages when the user owns the booking (logged-in) or when this
-    booking was just created in the same browser session (guest checkout).
+    Allow payment pages when the user owns the booking (logged-in), when the
+    booking id is stored in session after /book-seats/, or when a valid signed
+    ?checkout= token is present (guests — fixes missing session cookies on some hosts).
     """
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
     if request.user.is_authenticated:
         if booking_group.passenger.email.strip().lower() != _passenger_email_for_user(request.user):
             raise Http404
         return booking_group
+
     checkout_raw = request.session.get('checkout_booking_group_id')
     try:
-        checkout_id = int(checkout_raw)
+        if int(checkout_raw) == booking_group.id:
+            return booking_group
     except (TypeError, ValueError):
-        checkout_id = None
-    if checkout_id == booking_group.id:
-        return booking_group
+        pass
+
+    token = (request.GET.get('checkout') or request.POST.get('checkout') or '').strip()
+    if token:
+        vid = verify_checkout_token(token)
+        if vid is not None and int(vid) == booking_group.id:
+            request.session['checkout_booking_group_id'] = booking_group.id
+            request.session.modified = True
+            return booking_group
     raise Http404
 
 
@@ -699,14 +713,20 @@ def book_seats_api(request):
 
         request.session['checkout_booking_group_id'] = booking_group.id
         request.session.modified = True
+
+        pay_path = reverse('payment', args=[booking_group.id])
+        if request.user.is_authenticated:
+            payment_url = pay_path
+        else:
+            payment_url = f"{pay_path}?{urlencode({'checkout': sign_checkout_token(booking_group.id)})}"
         
         # Return success with the booking group ID to redirect to payment
         return JsonResponse({
             'success': True, 
             'message': 'Booking successful',
             'booking_group_id': booking_group.id,
-            'payment_url': reverse('payment', args=[booking_group.id]),
-            'redirect_url': reverse('payment', args=[booking_group.id]),
+            'payment_url': payment_url,
+            'redirect_url': payment_url,
         })
     
     except Exception as e:
@@ -1790,7 +1810,15 @@ def payment_page(request, booking_group_id):
         messages.info(request, 'Payment for this booking has already been completed.')
         return redirect('booking_success')
 
-    return render(request, 'NelsaApp/payment.html', {'booking_group': booking_group})
+    checkout_q = (request.GET.get('checkout') or '').strip()
+    return render(
+        request,
+        'NelsaApp/payment.html',
+        {
+            'booking_group': booking_group,
+            'checkout_token': checkout_q,
+        },
+    )
 
 @require_POST
 def start_payment(request, booking_group_id):
@@ -1803,12 +1831,22 @@ def start_payment(request, booking_group_id):
         return redirect('booking_success')
 
     payment_method = (request.POST.get('payment_method') or '').strip().upper()
+    checkout_token = (request.POST.get('checkout') or '').strip()
     valid_methods = [method[0] for method in Payment.PAYMENT_METHODS]
     if payment_method not in valid_methods:
         messages.error(request, 'Please select a valid payment method.')
-        return redirect('payment', booking_group_id=booking_group_id)
+        pay = reverse('payment', args=[booking_group_id])
+        if checkout_token and not request.user.is_authenticated:
+            pay = f"{pay}?{urlencode({'checkout': checkout_token})}"
+        return redirect(pay)
 
-    return redirect('process_payment', payment_method=payment_method, booking_group_id=booking_group_id)
+    next_url = reverse(
+        'process_payment',
+        kwargs={'payment_method': payment_method, 'booking_group_id': booking_group_id},
+    )
+    if checkout_token and not request.user.is_authenticated:
+        next_url = f"{next_url}?{urlencode({'checkout': checkout_token})}"
+    return redirect(next_url)
 
 def process_payment(request, payment_method, booking_group_id):
     """View for processing payment with the selected method for a group of bookings."""

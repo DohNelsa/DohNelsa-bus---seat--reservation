@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 
 TICKET_SALT = "moghamo.ticket.v1"
+CHECKOUT_SALT = "moghamo.checkout.v1"
 
 
 def _signing_key():
@@ -32,5 +33,25 @@ def verify_ticket_token(token: str):
     max_age = int(getattr(settings, "TICKET_MAX_AGE_SECONDS", 120 * 24 * 3600))
     try:
         return int(_signer().unsign(token, max_age=max_age))
+    except (BadSignature, SignatureExpired, ValueError, TypeError):
+        return None
+
+
+def _checkout_signer() -> TimestampSigner:
+    return TimestampSigner(key=_signing_key(), salt=CHECKOUT_SALT)
+
+
+def sign_checkout_token(booking_group_id: int) -> str:
+    """Short-lived token so guests can open payment pages if the session cookie is missing."""
+    return _checkout_signer().sign(str(int(booking_group_id)))
+
+
+def verify_checkout_token(token: str):
+    """Returns booking group id if valid, else None."""
+    if not token or not str(token).strip():
+        return None
+    max_age = int(getattr(settings, "CHECKOUT_MAX_AGE_SECONDS", 2 * 3600))
+    try:
+        return int(_checkout_signer().unsign(str(token).strip(), max_age=max_age))
     except (BadSignature, SignatureExpired, ValueError, TypeError):
         return None

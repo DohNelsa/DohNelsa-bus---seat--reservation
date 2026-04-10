@@ -407,6 +407,11 @@
                 })
             })
             .then(async response => {
+                const ct = (response.headers.get('content-type') || '').toLowerCase();
+                if (!ct.includes('application/json')) {
+                    alert('Could not complete booking (invalid server response). Refresh the page and try again.');
+                    return;
+                }
                 let data = {};
                 try {
                     data = await response.json();
@@ -419,9 +424,12 @@
                     return;
                 }
                 if (data.success || data.booking_group_id) {
-                    const paymentUrl = data.payment_url || data.redirect_url || (data.booking_group_id ? `/payment/${data.booking_group_id}/` : '');
+                    let paymentUrl = data.payment_url || data.redirect_url || '';
+                    if (!paymentUrl && data.booking_group_id) {
+                        paymentUrl = '/payment/' + encodeURIComponent(data.booking_group_id) + '/';
+                    }
                     if (paymentUrl) {
-                        window.location.assign(paymentUrl);
+                        window.location.href = paymentUrl;
                         return;
                     }
                     alert('Booking created but payment link is missing. Please open My Profile and continue payment from your pending booking.');

@@ -58,6 +58,9 @@
 
                 <form method="post" action="{% url 'start_payment' booking_group.id %}">
                     {% csrf_token %}
+                    {% if checkout_token %}
+                    <input type="hidden" name="checkout" value="{{ checkout_token }}">
+                    {% endif %}
                 <div class="mb-6">
                     <h3 class="text-lg font-medium text-gray-900">Select Payment Method</h3>
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
