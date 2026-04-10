@@ -729,8 +729,15 @@ def book_seats_api(request):
             'redirect_url': payment_url,
         })
     
-    except Exception as e:
-        return JsonResponse({'success': False, 'message': str(e)})
+    except Exception:
+        logger.exception("book_seats_api failed")
+        return JsonResponse(
+            {
+                'success': False,
+                'message': 'Booking could not be completed. Please try again in a moment.',
+            },
+            status=500,
+        )
 
 @login_required
 def booking_success_view(request):

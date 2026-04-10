@@ -145,6 +145,11 @@ class BookingGroup(models.Model):
         db_index=True,
         help_text='Tracks post-booking customer notifications (email/SMS).',
     )
+    customer_refund_requested = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='True when the customer has requested a refund for this booking group.',
+    )
 
     def __str__(self):
         return f"Booking Group {self.id} - {self.passenger.name} ({self.bookings.count()} seats)"
