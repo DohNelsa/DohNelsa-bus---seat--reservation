@@ -4,230 +4,339 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MOGHAMO EXPRESS - Book Bus Tickets Online</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/Glide.js/3.6.0/css/glide.core.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/Glide.js/3.6.0/css/glide.theme.min.css" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com/3.4.5?plugins=forms@0.5.7,typography@0.5.13,aspect-ratio@0.4.2,container-queries@0.1.1"></script>
-    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <title>MOGHAMO EXPRESS — Book Bus Tickets Online</title>
+    <meta name="description" content="Travel comfortably across Cameroon. Book bus tickets online with MOGHAMO EXPRESS — secure booking, reliable schedules, and 24/7 support.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        brand: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 900: '#1e3a8a' },
+                    },
+                    boxShadow: {
+                        'soft': '0 10px 40px -10px rgba(15, 23, 42, 0.12)',
+                        'card': '0 4px 6px -1px rgba(15, 23, 42, 0.06), 0 10px 20px -5px rgba(15, 23, 42, 0.08)',
+                    },
+                },
+            },
+        };
+    </script>
+    <style>
+        .hero-gradient { background: linear-gradient(135deg, rgba(15, 23, 42, 0.88) 0%, rgba(30, 58, 138, 0.75) 50%, rgba(15, 23, 42, 0.85) 100%); }
+        .nav-blur { backdrop-filter: saturate(180%) blur(12px); }
+    </style>
 </head>
-<body class="font-['Inter'] bg-gray-50">
-    <nav class="bg-white shadow-sm fixed w-full z-50">
-        <div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
-                        <img class="h-8 w-auto" src="https://ai-public.creatie.ai/gen_page/logo_placeholder.png" alt="NELSBUS">
-                    </div>
-                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                        <a href="#" class="border-custom text-custom border-b-2 inline-flex items-center px-1 pt-1 text-sm font-medium">Home</a>
-                        <a href="{% url 'about_view' %}" class="border-transparent text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">About</a>
-                        <a href="{% url 'services' %}" class="border-transparent text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">Services</a>
-                        <a href="{% url 'routes' %}" class="border-transparent text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">Routes</a>
-                        <a href="{% url 'contact' %}" class="border-transparent text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">Contact</a>
-                        <a href="{% url 'booking' %}" class="border-transparent text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">Book Rides</a>
-                    </div>
-                </div>
-                <div class="hidden sm:ml-6 sm:flex sm:items-center space-x-4">
+<body class="font-sans antialiased text-slate-800 bg-slate-50">
+
+    <!-- Navigation -->
+    <header class="fixed top-0 inset-x-0 z-50 border-b border-slate-200/80 bg-white/90 nav-blur">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex h-16 lg:h-[4.25rem] items-center justify-between">
+                <a href="{% url 'index' %}" class="flex items-center gap-3 group">
+                    <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-600/25 group-hover:shadow-blue-600/35 transition-shadow">
+                        <i class="fas fa-bus text-lg" aria-hidden="true"></i>
+                    </span>
+                    <span class="hidden sm:block">
+                        <span class="block text-sm font-extrabold tracking-tight text-slate-900 leading-tight">MOGHAMO</span>
+                        <span class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">Express</span>
+                    </span>
+                </a>
+
+                <nav class="hidden lg:flex items-center gap-1">
+                    <a href="{% url 'index' %}" class="px-3 py-2 text-sm font-semibold text-blue-600 rounded-lg bg-blue-50">Home</a>
+                    <a href="{% url 'about_view' %}" class="px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors">About</a>
+                    <a href="{% url 'services' %}" class="px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors">Services</a>
+                    <a href="{% url 'routes' %}" class="px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors">Routes</a>
+                    <a href="{% url 'contact' %}" class="px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors">Contact</a>
+                    <a href="{% url 'booking' %}" class="px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors">Book rides</a>
+                </nav>
+
+                <div class="hidden sm:flex items-center gap-3">
                     {% if user.is_authenticated %}
                         {% if user.is_staff %}
-                            <a href="{% url 'admin_dashboard' %}" class="text-black hover:text-gray-800">Admin Dashboard</a>
+                        <a href="{% url 'admin_dashboard' %}" class="text-sm font-medium text-slate-600 hover:text-slate-900">Dashboard</a>
                         {% endif %}
-                        <a href="{% url 'user_profile' %}" class="text-black hover:text-gray-800">My Profile</a>
-                        <a href="{% url 'logout' %}" class="text-black hover:text-gray-800">Logout</a>
+                        <a href="{% url 'user_profile' %}" class="text-sm font-medium text-slate-600 hover:text-slate-900">Profile</a>
+                        <a href="{% url 'logout' %}" class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors">Logout</a>
                     {% else %}
-                        <a href="{% url 'Login' %}" class="text-black hover:text-gray-800">Login</a>
-                        <a href="{% url 'user-register' %}" class="text-black hover:text-gray-800">Register</a>
+                        <a href="{% url 'Login' %}" class="text-sm font-semibold text-slate-700 hover:text-slate-900">Sign in</a>
+                        <a href="{% url 'user-register' %}" class="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors shadow-sm">Register</a>
                     {% endif %}
                 </div>
-                <div class="-mr-2 flex items-center sm:hidden">
-                    <button type="button" class="mobile-menu-button bg-white inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-black" aria-controls="mobile-menu" aria-expanded="false">
-                        <span class="sr-only">Open main menu</span>
-                        <i class="fas fa-bars"></i>
-                    </button>
-                </div>
+
+                <button type="button" class="lg:hidden mobile-menu-button inline-flex items-center justify-center rounded-lg p-2 text-slate-600 hover:bg-slate-100" aria-controls="mobile-menu" aria-expanded="false">
+                    <span class="sr-only">Menu</span>
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
             </div>
         </div>
 
-        <!-- Mobile menu, show/hide based on menu state. -->
-        <div class="sm:hidden hidden" id="mobile-menu">
-            <div class="pt-2 pb-3 space-y-1">
-                <a href="#" class="bg-gray-900 text-white block pl-3 pr-4 py-2 border-l-4 border-gray-900 text-base font-medium">Home</a>
-                <a href="{% url 'about_view' %}" class="text-gray-300 hover:bg-gray-700 hover:text-white block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium">About</a>
-                <a href="{% url 'services' %}" class="text-gray-300 hover:bg-gray-700 hover:text-white block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium">Services</a>
-                <a href="{% url 'routes' %}" class="text-gray-300 hover:bg-gray-700 hover:text-white block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium">Routes</a>
-                <a href="{% url 'contact' %}" class="text-gray-300 hover:bg-gray-700 hover:text-white block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium">Contact</a>
-                <a href="{% url 'booking' %}" class="text-gray-300 hover:bg-gray-700 hover:text-white block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium">Book Rides</a>
-            </div>
-            <div class="pt-4 pb-3 border-t border-gray-200">
-                {% if user.is_authenticated %}
-                    {% if user.is_staff %}
-                        <a href="{% url 'admin_dashboard' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">Admin Dashboard</a>
+        <div class="lg:hidden hidden border-t border-slate-200 bg-white" id="mobile-menu">
+            <div class="px-4 py-4 space-y-1 max-w-7xl mx-auto">
+                <a href="{% url 'index' %}" class="block rounded-lg px-3 py-2 text-base font-semibold bg-blue-50 text-blue-700">Home</a>
+                <a href="{% url 'about_view' %}" class="block rounded-lg px-3 py-2 text-base font-medium text-slate-700 hover:bg-slate-50">About</a>
+                <a href="{% url 'services' %}" class="block rounded-lg px-3 py-2 text-base font-medium text-slate-700 hover:bg-slate-50">Services</a>
+                <a href="{% url 'routes' %}" class="block rounded-lg px-3 py-2 text-base font-medium text-slate-700 hover:bg-slate-50">Routes</a>
+                <a href="{% url 'contact' %}" class="block rounded-lg px-3 py-2 text-base font-medium text-slate-700 hover:bg-slate-50">Contact</a>
+                <a href="{% url 'booking' %}" class="block rounded-lg px-3 py-2 text-base font-medium text-slate-700 hover:bg-slate-50">Book rides</a>
+                <div class="pt-4 mt-4 border-t border-slate-200 flex flex-col gap-2">
+                    {% if user.is_authenticated %}
+                        {% if user.is_staff %}<a href="{% url 'admin_dashboard' %}" class="text-sm font-medium text-slate-700">Dashboard</a>{% endif %}
+                        <a href="{% url 'user_profile' %}" class="text-sm font-medium text-slate-700">Profile</a>
+                        <a href="{% url 'logout' %}" class="inline-flex justify-center rounded-lg border border-slate-200 py-2 text-sm font-semibold">Logout</a>
+                    {% else %}
+                        <a href="{% url 'Login' %}" class="inline-flex justify-center rounded-lg border border-slate-200 py-2 text-sm font-semibold">Sign in</a>
+                        <a href="{% url 'user-register' %}" class="inline-flex justify-center rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white">Register</a>
                     {% endif %}
-                    <a href="{% url 'user_profile' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">My Profile</a>
-                    <a href="{% url 'logout' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">Logout</a>
-                {% else %}
-                    <a href="{% url 'Login' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">Login</a>
-                    <a href="{% url 'user-register' %}" class="block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800">Register</a>
-                {% endif %}
+                </div>
             </div>
         </div>
-    </nav>
+    </header>
 
     <main>
-        <div class="pt-16">
-            <div class="relative">
-                <div class="absolute inset-0">
-                    <img class="h-48 w-full object-cover" src="{% static 'image.png' %}" alt="Capital City">
-                    <div class="absolute inset-0 bg-gray-900/60 mix-blend-multiply"></div>
-                </div>
-                <div class="relative max-w-7xl mx-auto py-24 px-4 sm:py-32 sm:px-6 lg:px-8">
-                    <h1 class="text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">WELCOME TO MOGHAMO EXPRESS</h1>
-                    <p class="mt-6 max-w-3xl text-xl text-gray-300">Travel comfortably with the most reliable agency. Find the best deals on bus tickets across the Cameroon.</p>
-                    <div class="mt-10">
-                        <a href="{% url 'booking' %}" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-black hover:bg-gray-800">
-                            Book Your Ride Now
+        <!-- Hero -->
+        <section class="relative pt-16">
+            <div class="relative min-h-[min(85vh,640px)] flex items-center overflow-hidden">
+                <img class="absolute inset-0 h-full w-full object-cover" src="{% static 'image.png' %}" alt="" width="1920" height="1080" fetchpriority="high">
+                <div class="absolute inset-0 hero-gradient"></div>
+                <div class="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=\'40\' height=\'40\' viewBox=\'0 0 40 40\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23fff\' fill-opacity=\'0.04\'%3E%3Cpath d=\'M0 40L40 0H20L0 20M40 40V20L20 40\'/%3E%3C/g%3E%3C/svg%3E')] opacity-60"></div>
+
+                <div class="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
+                    <p class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-blue-100 backdrop-blur-sm">
+                        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Cameroon · Intercity bus travel
+                    </p>
+                    <h1 class="mt-6 text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white max-w-4xl leading-[1.1]">
+                        Move smarter across <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white">Cameroon</span>
+                    </h1>
+                    <p class="mt-6 max-w-2xl text-lg sm:text-xl text-slate-200 leading-relaxed">
+                        Comfortable seats, clear pricing, and secure booking. Plan your next trip with MOGHAMO EXPRESS — your connection between cities.
+                    </p>
+                    <div class="mt-10 flex flex-wrap items-center gap-4">
+                        <a href="{% url 'booking' %}" class="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3.5 text-base font-bold text-slate-900 shadow-xl shadow-black/20 hover:bg-blue-50 transition-colors">
+                            <i class="fas fa-ticket-alt text-blue-600" aria-hidden="true"></i>
+                            Book your ride
+                        </a>
+                        <a href="{% url 'routes' %}" class="inline-flex items-center gap-2 rounded-xl border-2 border-white/40 bg-white/10 px-6 py-3.5 text-base font-semibold text-white backdrop-blur-sm hover:bg-white/15 transition-colors">
+                            View routes
+                            <i class="fas fa-arrow-right text-sm opacity-80" aria-hidden="true"></i>
                         </a>
                     </div>
+                    <dl class="mt-14 grid grid-cols-2 sm:grid-cols-3 gap-6 max-w-3xl border-t border-white/15 pt-10">
+                        <div>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-blue-200/90">Coverage</dt>
+                            <dd class="mt-1 text-2xl font-bold text-white">Nationwide</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-blue-200/90">Booking</dt>
+                            <dd class="mt-1 text-2xl font-bold text-white">Online 24/7</dd>
+                        </div>
+                        <div class="col-span-2 sm:col-span-1">
+                            <dt class="text-xs font-semibold uppercase tracking-wide text-blue-200/90">Support</dt>
+                            <dd class="mt-1 text-2xl font-bold text-white">Always here</dd>
+                        </div>
+                    </dl>
                 </div>
             </div>
+        </section>
 
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-                <div class="text-center">
-                    <h2 class="text-3xl font-bold text-gray-900">Popular Routes</h2>
-                    <p class="mt-3 max-w-2xl mx-auto text-xl text-gray-500">Discover our most booked destinations</p>
+        <!-- Popular routes -->
+        <section class="py-16 lg:py-24">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center max-w-2xl mx-auto">
+                    <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Popular routes</h2>
+                    <p class="mt-4 text-lg text-slate-600">Transparent fares and schedules you can trust — book in minutes.</p>
                 </div>
 
-                <div class="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-                    <div class="bg-white overflow-hidden shadow rounded-lg">
-                        <img class="h-48 w-full object-cover" src="{% static 'img1.jpg' %}" alt="Economic Capital">
-                        <div class="p-6">
-                            <div class="flex justify-between items-center">
-                                <div>
-                                    <h3 class="text-lg font-medium text-gray-900">Bamenda - Douala</h3>
-                                    <p class="mt-1 text-sm text-gray-500">8hours journey</p>
-                                </div>
-                                <div class="text-right">
-                                    <p class="text-lg font-medium text-black">6000frs</p>
-                                    <p class="mt-1 text-sm text-gray-500">per person</p>
-                                </div>
-                            </div>
-                            <div class="mt-4">
-                                <button class="!rounded-button w-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
-                                    Book Now
-                                </button>
-                            </div>
+                <div class="mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+                    <article class="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card border border-slate-100/80 transition-all duration-300 hover:shadow-soft hover:-translate-y-1">
+                        <div class="relative h-52 overflow-hidden">
+                            <img class="h-full w-full object-cover transition duration-500 group-hover:scale-105" src="{% static 'img1.jpg' %}" alt="Bamenda to Douala">
+                            <div class="absolute inset-0 bg-gradient-to-t from-slate-900/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
-                    </div>
-
-                    <div class="bg-white overflow-hidden shadow rounded-lg">
-                        <img class="h-48 w-full object-cover" src="{% static 'image.png' %}" alt="Litoral">
-                        <div class="p-6">
-                            <div class="flex justify-between items-center">
+                        <div class="flex flex-1 flex-col p-6">
+                            <div class="flex items-start justify-between gap-4">
                                 <div>
-                                    <h3 class="text-lg font-medium text-gray-900">Douala - Yaounde</h3>
-                                    <p class="mt-1 text-sm text-gray-500">2hours journey</p>
+                                    <h3 class="text-lg font-bold text-slate-900">Bamenda — Douala</h3>
+                                    <p class="mt-1 text-sm text-slate-500"><i class="fas fa-clock mr-1.5 text-blue-500" aria-hidden="true"></i>Approx. 8 hours</p>
                                 </div>
-                                <div class="text-right">
-                                    <p class="text-lg font-medium text-black">4000frs</p>
-                                    <p class="mt-1 text-sm text-gray-500">per person</p>
+                                <div class="text-right shrink-0">
+                                    <p class="text-xl font-extrabold text-blue-600">6,000 <span class="text-sm font-semibold text-slate-500">FCFA</span></p>
+                                    <p class="text-xs text-slate-400">per person</p>
                                 </div>
                             </div>
-                            <div class="mt-4">
-                                <button class="!rounded-button w-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
-                                    Book Now
-                                </button>
-                            </div>
+                            <a href="{% url 'booking' %}" class="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/25 hover:from-blue-500 hover:to-indigo-500 transition-all">
+                                Book this route
+                            </a>
                         </div>
-                    </div>
+                    </article>
 
-                    <div class="bg-white overflow-hidden shadow rounded-lg">
-                        <img class="h-48 w-full object-cover" src="{% static 'img2.jpg' %}" alt="Litoral">
-                        <div class="p-6">
-                            <div class="flex justify-between items-center">
+                    <article class="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card border border-slate-100/80 transition-all duration-300 hover:shadow-soft hover:-translate-y-1">
+                        <div class="relative h-52 overflow-hidden">
+                            <img class="h-full w-full object-cover transition duration-500 group-hover:scale-105" src="{% static 'image.png' %}" alt="Douala to Yaoundé">
+                        </div>
+                        <div class="flex flex-1 flex-col p-6">
+                            <div class="flex items-start justify-between gap-4">
                                 <div>
-                                    <h3 class="text-lg font-medium text-gray-900">Yaounde - Bamenda</h3>
-                                    <p class="mt-1 text-sm text-gray-500">10hours journey</p>
+                                    <h3 class="text-lg font-bold text-slate-900">Douala — Yaoundé</h3>
+                                    <p class="mt-1 text-sm text-slate-500"><i class="fas fa-clock mr-1.5 text-blue-500" aria-hidden="true"></i>Approx. 2 hours</p>
                                 </div>
-                                <div class="text-right">
-                                    <p class="text-lg font-medium text-black">9000frs</p>
-                                    <p class="mt-1 text-sm text-gray-500">per person</p>
+                                <div class="text-right shrink-0">
+                                    <p class="text-xl font-extrabold text-blue-600">4,000 <span class="text-sm font-semibold text-slate-500">FCFA</span></p>
+                                    <p class="text-xs text-slate-400">per person</p>
                                 </div>
                             </div>
-                            <div class="mt-4">
-                                <button class="!rounded-button w-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
-                                    Book Now
-                                </button>
+                            <a href="{% url 'booking' %}" class="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/25 hover:from-blue-500 hover:to-indigo-500 transition-all">
+                                Book this route
+                            </a>
+                        </div>
+                    </article>
+
+                    <article class="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card border border-slate-100/80 transition-all duration-300 hover:shadow-soft hover:-translate-y-1 md:col-span-2 lg:col-span-1">
+                        <div class="relative h-52 overflow-hidden">
+                            <img class="h-full w-full object-cover transition duration-500 group-hover:scale-105" src="{% static 'img2.jpg' %}" alt="Yaoundé to Bamenda">
+                        </div>
+                        <div class="flex flex-1 flex-col p-6">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <h3 class="text-lg font-bold text-slate-900">Yaoundé — Bamenda</h3>
+                                    <p class="mt-1 text-sm text-slate-500"><i class="fas fa-clock mr-1.5 text-blue-500" aria-hidden="true"></i>Approx. 10 hours</p>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <p class="text-xl font-extrabold text-blue-600">9,000 <span class="text-sm font-semibold text-slate-500">FCFA</span></p>
+                                    <p class="text-xs text-slate-400">per person</p>
+                                </div>
                             </div>
+                            <a href="{% url 'booking' %}" class="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/25 hover:from-blue-500 hover:to-indigo-500 transition-all">
+                                Book this route
+                            </a>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- Why choose -->
+        <section class="border-y border-slate-200/80 bg-white py-16 lg:py-20">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center max-w-2xl mx-auto">
+                    <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Why MOGHAMO EXPRESS</h2>
+                    <p class="mt-4 text-lg text-slate-600">Built for travelers who want reliability, clarity, and peace of mind.</p>
+                </div>
+                <div class="mt-14 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                    <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-8 text-center transition hover:border-blue-200 hover:bg-white hover:shadow-card">
+                        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30">
+                            <i class="fas fa-shield-alt text-xl" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="mt-6 text-lg font-bold text-slate-900">Secure booking</h3>
+                        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Your details and payments are handled with care.</p>
+                    </div>
+                    <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-8 text-center transition hover:border-blue-200 hover:bg-white hover:shadow-card">
+                        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30">
+                            <i class="fas fa-headset text-xl" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="mt-6 text-lg font-bold text-slate-900">24/7 support</h3>
+                        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Reach us when you need help before or during travel.</p>
+                    </div>
+                    <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-8 text-center transition hover:border-blue-200 hover:bg-white hover:shadow-card">
+                        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30">
+                            <i class="fas fa-couch text-xl" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="mt-6 text-lg font-bold text-slate-900">Comfortable fleet</h3>
+                        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Modern buses selected for longer journeys.</p>
+                    </div>
+                    <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-8 text-center transition hover:border-blue-200 hover:bg-white hover:shadow-card">
+                        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30">
+                            <i class="fas fa-bolt text-xl" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="mt-6 text-lg font-bold text-slate-900">Quick booking</h3>
+                        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Pick seats and pay in a few guided steps.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA -->
+        <section class="py-16 lg:py-20">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-950 px-8 py-12 sm:px-12 lg:px-16 lg:py-16 text-center">
+                    <div class="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-80"></div>
+                    <div class="relative z-10 max-w-2xl mx-auto">
+                        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Ready for your next trip?</h2>
+                        <p class="mt-4 text-lg text-blue-100/95">Search schedules, choose your seat, and complete payment — all in one place.</p>
+                        <div class="mt-8 flex flex-wrap justify-center gap-4">
+                            <a href="{% url 'booking' %}" class="inline-flex items-center justify-center rounded-xl bg-white px-8 py-3.5 text-base font-bold text-slate-900 shadow-xl hover:bg-blue-50 transition-colors">
+                                Start booking
+                            </a>
+                            <a href="{% url 'contact' %}" class="inline-flex items-center justify-center rounded-xl border-2 border-white/30 bg-transparent px-8 py-3.5 text-base font-semibold text-white hover:bg-white/10 transition-colors">
+                                Contact us
+                            </a>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <div class="bg-white">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-                    <div class="text-center">
-                        <h2 class="text-3xl font-bold text-gray-900">WHY CHOOSE MOGHAMO EXPRESS</h2>
-                        <p class="mt-3 max-w-2xl mx-auto text-xl text-gray-500">Experience the best bus booking service</p>
-                    </div>
-                    <div class="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-                        <div class="text-center">
-                            <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-gray-100">
-                                <i class="fas fa-shield-alt text-xl text-black"></i>
-                            </div>
-                            <h3 class="mt-5 text-lg font-medium text-gray-900">Secure Booking</h3>
-                            <p class="mt-2 text-base text-gray-500">Your payment and personal information are always protected</p>
-                        </div>
-
-                        <div class="text-center">
-                            <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-gray-100">
-                                <i class="fas fa-headset text-xl text-black"></i>
-                            </div>
-                            <h3 class="mt-5 text-lg font-medium text-gray-900">24/7 Support</h3>
-                            <p class="mt-2 text-base text-gray-500">Our customer service team is here to help anytime</p>
-                        </div>
-
-                        <div class="text-center">
-                            <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-gray-100">
-                                <i class="fas fa-ticket-alt text-xl text-black"></i>
-                            </div>
-                            <h3 class="mt-5 text-lg font-medium text-gray-900">Easy Booking</h3>
-                            <p class="mt-2 text-base text-gray-500">Book your tickets in just a few simple steps</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        </section>
     </main>
 
-    <footer class="bg-white">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+    <!-- Footer -->
+    <footer class="bg-slate-900 text-slate-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 lg:py-16">
+            <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-12">
+                <div class="max-w-md">
+                    <div class="flex items-center gap-3">
+                        <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+                            <i class="fas fa-bus" aria-hidden="true"></i>
+                        </span>
+                        <span class="text-lg font-extrabold text-white tracking-tight">MOGHAMO EXPRESS</span>
+                    </div>
+                    <p class="mt-4 text-sm leading-relaxed text-slate-400">
+                        Intercity bus travel across Cameroon — simple booking, fair prices, and a team that puts passengers first.
+                    </p>
+                </div>
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-900 mb-4">Contact Us</h4>
-                    <ul class="space-y-2">
-                        <li class="text-sm text-gray-600"><i class="fas fa-envelope mr-2"></i>moghamoexpress@gmail.com</li>
-                        <li class="text-sm text-gray-600"><i class="fas fa-phone mr-2"></i>+237 682185962</li>
-                        <li class="text-sm text-gray-600"><i class="fas fa-phone mr-2"></i>+237 654554066</li>
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">Contact</h4>
+                    <ul class="mt-4 space-y-3 text-sm">
+                        <li class="flex items-start gap-3">
+                            <i class="fas fa-envelope mt-0.5 text-blue-400" aria-hidden="true"></i>
+                            <a href="mailto:moghamoexpress@gmail.com" class="hover:text-white transition-colors">moghamoexpress@gmail.com</a>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i class="fas fa-phone mt-0.5 text-blue-400" aria-hidden="true"></i>
+                            <a href="tel:+237675315422" class="hover:text-white transition-colors">+237 675 315 422</a>
+                        </li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">Explore</h4>
+                    <ul class="mt-4 space-y-2 text-sm">
+                        <li><a href="{% url 'booking' %}" class="hover:text-white transition-colors">Book a ride</a></li>
+                        <li><a href="{% url 'routes' %}" class="hover:text-white transition-colors">Routes</a></li>
+                        <li><a href="{% url 'about_view' %}" class="hover:text-white transition-colors">About</a></li>
                     </ul>
                 </div>
             </div>
-            <div class="border-t mt-8 pt-8 text-center">
-                <p class="text-sm text-gray-600">&copy; 2025 MOGHAMO EXPRESS. </p>
+            <div class="mt-12 border-t border-slate-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+                <p>&copy; {% now "Y" %} MOGHAMO EXPRESS. All rights reserved.</p>
+                <p class="text-slate-600">Safe travels · See you on board</p>
             </div>
         </div>
     </footer>
 
     <script>
-        // Mobile menu toggle
         document.addEventListener('DOMContentLoaded', function() {
-            const mobileMenuButton = document.querySelector('.mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-            
-            mobileMenuButton.addEventListener('click', function() {
-                mobileMenu.classList.toggle('hidden');
-            });
+            var btn = document.querySelector('.mobile-menu-button');
+            var menu = document.getElementById('mobile-menu');
+            if (btn && menu) {
+                btn.addEventListener('click', function() {
+                    menu.classList.toggle('hidden');
+                });
+            }
         });
     </script>
 </body>

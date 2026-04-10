@@ -1,79 +1,177 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
 
-{% block title %}About Us - MOGHAMO EXPRESS{% endblock %}
+{% block title %}About Us — MOGHAMO EXPRESS{% endblock %}
+
+{% block extra_head %}
+<style>
+    .about-hero-gradient {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 58, 138, 0.78) 50%, rgba(15, 23, 42, 0.9) 100%);
+    }
+    .about-grid-bg {
+        background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23fff' fill-opacity='0.05'%3E%3Cpath d='M0 40L40 0H20L0 20M40 40V20L20 40'/%3E%3C/g%3E%3C/svg%3E");
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="pt-20 pb-12">
-    <!-- Hero Section -->
-    <div class="relative">
-        <div class="absolute inset-0">
-            <img class="h-64 w-full object-cover" src="{% static 'images/img.jpeg' %}" alt="About MOGHAMO EXPRESS">
-            <div class="absolute inset-0 bg-gray-900/60 mix-blend-multiply"></div>
-        </div>
-        <div class="relative max-w-7xl mx-auto py-24 px-4 sm:py-32 sm:px-6 lg:px-8">
-            <h1 class="text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">About MOGHAMO EXPRESS</h1>
-            <p class="mt-6 max-w-3xl text-xl text-gray-300">Your trusted partner for safe and comfortable travel across Cameroon.</p>
-        </div>
-    </div>
-
-    <!-- Company Story Section -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-            <div>
-                <h2 class="text-3xl font-bold text-gray-900 mb-6">Our Story</h2>
-                <p class="text-lg text-gray-600 mb-4">Founded in 2010, MOGHAMO EXPRESS has grown from a small local bus service to one of Cameroon's leading transportation companies. Our journey began with a simple mission: to provide safe, reliable, and comfortable travel options for people across the country.</p>
-                <p class="text-lg text-gray-600 mb-4">Over the years, we've expanded our fleet, improved our services, and built a reputation for punctuality and customer satisfaction. Today, we operate routes connecting major cities across Cameroon such as Bamenda, Yaounde, Douala, serving thousands of passengers daily.</p>
-                <p class="text-lg text-gray-600">Our commitment to excellence and customer service has made us the preferred choice for travelers seeking a hassle-free journey experience.</p>
+<div class="bg-slate-50">
+    <!-- Hero -->
+    <section class="relative overflow-hidden">
+        <div class="relative min-h-[min(52vh,420px)] flex items-end sm:items-center">
+            <img class="absolute inset-0 h-full w-full object-cover" src="{% static 'image.png' %}" alt="MOGHAMO EXPRESS coach on route" width="1600" height="900" fetchpriority="high">
+            <div class="absolute inset-0 about-hero-gradient"></div>
+            <div class="absolute inset-0 about-grid-bg opacity-70"></div>
+            <div class="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 lg:py-24">
+                <p class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-blue-100 backdrop-blur-sm">
+                    <i class="fas fa-bus text-[10px]" aria-hidden="true"></i>
+                    Who we are
+                </p>
+                <h1 class="mt-5 text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white max-w-4xl leading-[1.1]">
+                    About <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white">MOGHAMO EXPRESS</span>
+                </h1>
+                <p class="mt-5 max-w-2xl text-lg sm:text-xl text-slate-200 leading-relaxed">
+                    Your trusted partner for safe, comfortable intercity travel across Cameroon — with clear booking and a team that puts passengers first.
+                </p>
+                <div class="mt-8 flex flex-wrap gap-4">
+                    <a href="{% url 'booking' %}" class="inline-flex items-center justify-center rounded-xl bg-white px-6 py-3.5 text-sm font-bold text-slate-900 shadow-lg hover:bg-blue-50 transition-colors">
+                        Book your ride
+                    </a>
+                    <a href="{% url 'contact' %}" class="inline-flex items-center justify-center rounded-xl border-2 border-white/35 bg-white/5 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/10 transition-colors">
+                        Contact us
+                    </a>
+                </div>
             </div>
-            <div class="relative h-96 rounded-lg overflow-hidden shadow-xl">
-                <img class="w-full h-full object-cover" src="{% static 'images/img1.jpg' %}" alt="MOGHAMO EXPRESS Bus">
-            </div>
         </div>
-    </div>
+    </section>
 
-    <!-- Mission & Values Section -->
-    <div class="bg-gray-50 py-16">
+    <!-- Story -->
+    <section class="py-16 lg:py-20">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="text-center mb-12">
-                <h2 class="text-3xl font-bold text-gray-900">Our Mission & Values</h2>
-                <p class="mt-4 text-lg text-gray-600">What drives us every day</p>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div class="bg-white p-6 rounded-lg shadow-sm">
-                    <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                        <i class="fas fa-shield-alt text-black text-xl"></i>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+                <div class="order-2 lg:order-1">
+                    <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Our story</h2>
+                    <p class="mt-2 text-sm font-semibold uppercase tracking-wider text-blue-600">From local service to nationwide connections</p>
+                    <p class="mt-6 text-lg text-slate-600 leading-relaxed">
+                        Founded in 2010, MOGHAMO EXPRESS grew from a small local bus service into one of Cameroon’s trusted transportation names. We started with a simple mission: safe, reliable, and comfortable travel for everyone on the road.
+                    </p>
+                    <p class="mt-4 text-lg text-slate-600 leading-relaxed">
+                        Today we connect major cities including Bamenda, Yaoundé, and Douala — with a focus on punctuality, well-maintained vehicles, and service that respects your time.
+                    </p>
+                    <div class="mt-10 grid grid-cols-3 gap-4 sm:gap-6">
+                        <div class="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 text-center shadow-sm">
+                            <p class="text-2xl sm:text-3xl font-extrabold text-blue-600">2010</p>
+                            <p class="mt-1 text-xs sm:text-sm font-medium text-slate-500">Established</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 text-center shadow-sm">
+                            <p class="text-2xl sm:text-3xl font-extrabold text-blue-600">3+</p>
+                            <p class="mt-1 text-xs sm:text-sm font-medium text-slate-500">Key hubs</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 text-center shadow-sm">
+                            <p class="text-2xl sm:text-3xl font-extrabold text-blue-600">24/7</p>
+                            <p class="mt-1 text-xs sm:text-sm font-medium text-slate-500">Support</p>
+                        </div>
                     </div>
-                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Safety First</h3>
-                    <p class="text-gray-600">We prioritize the safety of our passengers and staff above all else, maintaining rigorous safety standards and regular vehicle maintenance.</p>
                 </div>
-                <div class="bg-white p-6 rounded-lg shadow-sm">
-                    <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                        <i class="fas fa-clock text-black text-xl"></i>
-                    </div>
-                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Reliability</h3>
-                    <p class="text-gray-600">We are committed to providing punctual services and ensuring our passengers reach their destinations on time, every time.</p>
-                </div>
-                <div class="bg-white p-6 rounded-lg shadow-sm">
-                    <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                        <i class="fas fa-smile text-black text-xl"></i>
-                    </div>
-                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Customer Satisfaction</h3>
-                    <p class="text-gray-600">We strive to exceed customer expectations by providing comfortable journeys and exceptional service throughout their travel experience.</p>
+                <div class="order-1 lg:order-2 relative">
+                    <div class="absolute -inset-4 rounded-3xl bg-gradient-to-br from-blue-600/20 to-indigo-600/20 blur-2xl -z-10"></div>
+                    <figure class="relative overflow-hidden rounded-2xl shadow-2xl shadow-slate-900/15 ring-1 ring-slate-200/80 bg-slate-200">
+                        <div class="aspect-[4/3] sm:aspect-[5/4] w-full">
+                            <img class="h-full w-full object-cover object-center" src="{% static 'img1.jpg' %}" alt="Intercity coach bus — MOGHAMO EXPRESS fleet" width="1600" height="1200" loading="lazy" decoding="async">
+                        </div>
+                        <figcaption class="flex items-center gap-3 border-t border-slate-200/80 bg-white px-5 py-4">
+                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/20">
+                                <i class="fas fa-bus" aria-hidden="true"></i>
+                            </span>
+                            <div>
+                                <p class="text-sm font-bold text-slate-900">MOGHAMO EXPRESS bus fleet</p>
+                                <p class="text-xs text-slate-500">Modern coaches maintained for long-distance comfort and safety.</p>
+                            </div>
+                        </figcaption>
+                    </figure>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <!-- Call to Action -->
-    <div class="bg-gray-900 py-12">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <h2 class="text-3xl font-bold text-white mb-4">Ready to Travel with Us?</h2>
-            <p class="text-xl text-gray-300 mb-8">Book your next journey with MOGHAMO EXPRESS and experience the difference.</p>
-            <a href="{% url 'booking' %}" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black">
-                Book Your Ride Now
-            </a>
+    <!-- Mission & values -->
+    <section class="border-y border-slate-200/80 bg-white py-16 lg:py-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-2xl mx-auto">
+                <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Mission &amp; values</h2>
+                <p class="mt-4 text-lg text-slate-600">What drives us every time we hit the road.</p>
+            </div>
+            <div class="mt-14 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+                <article class="rounded-2xl border border-slate-100 bg-slate-50/80 p-8 transition hover:border-blue-200 hover:bg-white hover:shadow-[0_10px_40px_-10px_rgba(15,23,42,0.12)]">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30">
+                        <i class="fas fa-shield-alt text-xl" aria-hidden="true"></i>
+                    </div>
+                    <h3 class="mt-6 text-xl font-bold text-slate-900">Safety first</h3>
+                    <p class="mt-3 text-slate-600 leading-relaxed">Rigorous standards, trained crews, and regular vehicle checks — because nothing matters more than getting you there safely.</p>
+                </article>
+                <article class="rounded-2xl border border-slate-100 bg-slate-50/80 p-8 transition hover:border-blue-200 hover:bg-white hover:shadow-[0_10px_40px_-10px_rgba(15,23,42,0.12)]">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30">
+                        <i class="fas fa-clock text-xl" aria-hidden="true"></i>
+                    </div>
+                    <h3 class="mt-6 text-xl font-bold text-slate-900">Reliability</h3>
+                    <p class="mt-3 text-slate-600 leading-relaxed">We work hard to keep schedules honest and communication clear — so you can plan your trip with confidence.</p>
+                </article>
+                <article class="rounded-2xl border border-slate-100 bg-slate-50/80 p-8 sm:col-span-2 lg:col-span-1 transition hover:border-blue-200 hover:bg-white hover:shadow-[0_10px_40px_-10px_rgba(15,23,42,0.12)]">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30">
+                        <i class="fas fa-smile text-xl" aria-hidden="true"></i>
+                    </div>
+                    <h3 class="mt-6 text-xl font-bold text-slate-900">Customer satisfaction</h3>
+                    <p class="mt-3 text-slate-600 leading-relaxed">Comfortable seating, respectful staff, and support when you need it — before, during, and after your journey.</p>
+                </article>
+            </div>
         </div>
-    </div>
+    </section>
+
+    <!-- Phone CTA -->
+    <section class="py-12 lg:py-14">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 px-8 py-10 sm:px-12 lg:px-16">
+                <div class="absolute inset-0 opacity-30 bg-[url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.06\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')]"></div>
+                <div class="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
+                    <div>
+                        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Questions? Call us directly</h2>
+                        <p class="mt-2 text-blue-100/90 max-w-xl">Our team is here to help with routes, bookings, and travel information.</p>
+                    </div>
+                    <a href="tel:+237675315422" class="inline-flex items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-lg font-bold text-slate-900 shadow-xl hover:bg-blue-50 transition-colors shrink-0">
+                        <i class="fas fa-phone-alt text-blue-600" aria-hidden="true"></i>
+                        +237 675 315 422
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Bottom CTA -->
+    <section class="pb-16 lg:pb-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="relative overflow-hidden rounded-3xl border border-blue-300/30 bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-950 px-8 py-12 sm:px-12 text-center shadow-2xl shadow-slate-900/35">
+                <div class="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=\'56\' height=\'56\' viewBox=\'0 0 56 56\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.07\'%3E%3Cpath d=\'M28 28m-28 0a28 28 0 1 0 56 0a28 28 0 1 0 -56 0\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-60"></div>
+                <div class="absolute -top-20 -left-20 h-56 w-56 rounded-full bg-blue-500/25 blur-3xl"></div>
+                <div class="absolute -bottom-20 -right-20 h-56 w-56 rounded-full bg-indigo-500/25 blur-3xl"></div>
+                <div class="relative z-10">
+                    <p class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-blue-100">
+                        <i class="fas fa-ticket-alt text-[11px]" aria-hidden="true"></i>
+                        Fast & secure booking
+                    </p>
+                    <h2 class="mt-5 text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Ready to travel with us?</h2>
+                    <p class="mt-4 text-lg text-blue-100/95 max-w-2xl mx-auto">Book your next journey online — choose your seat and pay securely in a few steps.</p>
+                    <div class="mt-6 flex flex-wrap items-center justify-center gap-3 text-sm">
+                        <span class="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-blue-100">Seat selection</span>
+                        <span class="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-blue-100">Secure payment</span>
+                        <span class="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-blue-100">Instant confirmation</span>
+                    </div>
+                </div>
+                <a href="{% url 'booking' %}" class="relative z-10 mt-8 inline-flex items-center justify-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-extrabold text-slate-900 shadow-xl shadow-black/20 hover:bg-blue-50 transition-all">
+                    <i class="fas fa-arrow-right text-blue-600" aria-hidden="true"></i>
+                    Book your ride now
+                </a>
+            </div>
+        </div>
+    </section>
 </div>
 {% endblock %}

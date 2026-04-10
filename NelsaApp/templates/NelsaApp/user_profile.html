@@ -128,16 +128,16 @@
                 <div class="card-body p-4">
                     {% if booking_groups %}
                         <div class="table-responsive">
-                            <table class="table table-hover align-middle">
+                            <table class="table table-bordered table-hover align-middle booking-table mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Booking Group ID</th>
+                                        <th class="text-nowrap">Booking ID</th>
                                         <th>Route</th>
-                                        <th>Date & Time</th>
-                                        <th>Seats</th>
-                                        <th>Total Amount</th>
-                                        <th>Status</th>
-                                        <th>Action</th>
+                                        <th class="text-nowrap">Date &amp; Time</th>
+                                        <th class="text-nowrap">Seats</th>
+                                        <th class="text-nowrap">Total Amount</th>
+                                        <th class="text-nowrap">Status</th>
+                                        <th class="text-nowrap">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -147,39 +147,26 @@
                                                 <span class="badge bg-secondary">#{{ booking_group.id }}</span>
                                             </td>
                                             <td>
-                                                <div class="d-flex align-items-center">
-                                                    <i class="fas fa-route text-primary me-2"></i>
-                                                    <div>
-                                                        <strong>{{ booking_group.schedule.route.start_location }} → {{ booking_group.schedule.route.end_location }}</strong>
-                                                        <br>
-                                                        <small class="text-muted">Bus: {{ booking_group.schedule.bus.bus_number }} ({{ booking_group.schedule.bus.bus_type }})</small>
-                                                    </div>
+                                                <div class="booking-cell">
+                                                    <div class="booking-main fw-semibold">{{ booking_group.schedule.route.start_location }} → {{ booking_group.schedule.route.end_location }}</div>
+                                                    <small class="booking-sub text-muted">Bus: {{ booking_group.schedule.bus.bus_number }} ({{ booking_group.schedule.bus.bus_type }})</small>
                                                 </div>
                                             </td>
                                             <td>
-                                                <div class="d-flex align-items-center">
-                                                    <i class="far fa-calendar-alt text-primary me-2"></i>
-                                                    <div>
-                                                        <strong>{{ booking_group.schedule.departure_time|date:"M d, Y" }}</strong>
-                                                        <br>
-                                                        <small class="text-muted">{{ booking_group.schedule.departure_time|date:"g:i A" }}</small>
-                                                    </div>
+                                                <div class="booking-cell">
+                                                    <div class="booking-main fw-semibold">{{ booking_group.schedule.departure_time|date:"M d, Y" }}</div>
+                                                    <small class="booking-sub text-muted">{{ booking_group.schedule.departure_time|date:"g:i A" }}</small>
                                                 </div>
                                             </td>
                                             <td>
-                                                <div class="d-flex align-items-center">
-                                                    <i class="fas fa-chair text-primary me-2"></i>
-                                                    <div>
-                                                        <strong>{{ booking_group.get_total_seats }} seat(s)</strong>
-                                                        <br>
-                                                        <small class="text-muted">{{ booking_group.get_seat_numbers|join:", " }}</small>
-                                                    </div>
+                                                <div class="booking-cell">
+                                                    <div class="booking-main fw-semibold">{{ booking_group.get_total_seats }} seat(s)</div>
+                                                    <small class="booking-sub text-muted">{{ booking_group.get_seat_numbers|join:", " }}</small>
                                                 </div>
                                             </td>
                                             <td>
-                                                <div class="d-flex align-items-center">
-                                                    <i class="fas fa-money-bill text-primary me-2"></i>
-                                                    <strong>{{ booking_group.total_amount }} FCFA</strong>
+                                                <div class="booking-cell">
+                                                    <div class="booking-main fw-semibold">{{ booking_group.total_amount }} FCFA</div>
                                                 </div>
                                             </td>
                                             <td>
@@ -195,20 +182,15 @@
                                                 </span>
                                             </td>
                                             <td>
-                                                <div class="btn-group" role="group">
-                                                    <button type="button" class="btn btn-sm btn-info dropdown-toggle" data-bs-toggle="dropdown">
-                                                        <i class="fas fa-cog me-1"></i> Actions
+                                                <div class="d-flex flex-column gap-2 action-cell">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary text-start" onclick="viewBookingDetails({{ booking_group.id }})">
+                                                        <i class="fas fa-eye me-1"></i> View Details
                                                     </button>
-                                                    <ul class="dropdown-menu">
-                                                        <li><a class="dropdown-item" href="#" onclick="viewBookingDetails({{ booking_group.id }})">
-                                                            <i class="fas fa-eye me-2"></i> View Details
-                                                        </a></li>
-                                                        {% if booking_group.status == 'Pending' %}
-                                                            <li><a class="dropdown-item" href="{% url 'payment' booking_group.id %}">
-                                                                <i class="fas fa-credit-card me-2"></i> Make Payment
-                                                            </a></li>
-                                                        {% endif %}
-                                                    </ul>
+                                                    {% if booking_group.status == 'Pending' %}
+                                                    <a class="btn btn-sm btn-primary text-start" href="{% url 'payment' booking_group.id %}">
+                                                        <i class="fas fa-credit-card me-1"></i> Make Payment
+                                                    </a>
+                                                    {% endif %}
                                                 </div>
                                             </td>
                                         </tr>
@@ -341,6 +323,35 @@
     .stat-item h4 {
         margin: 0;
         font-weight: 600;
+    }
+    .booking-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.2rem;
+        line-height: 1.25;
+    }
+    .booking-main {
+        display: block;
+        color: #212529;
+    }
+    .booking-sub {
+        display: block;
+        font-size: 0.82rem;
+    }
+    .booking-table th {
+        white-space: nowrap;
+        background: #f8fafc;
+        vertical-align: middle;
+    }
+    .booking-table td {
+        vertical-align: top;
+    }
+    .booking-table td:first-child {
+        min-width: 90px;
+    }
+    .action-cell {
+        min-width: 140px;
     }
 </style>
 
