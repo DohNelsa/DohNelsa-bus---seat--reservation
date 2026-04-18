@@ -37,6 +37,7 @@ from django.db.models import Sum, Count
 from django.db import DatabaseError, transaction, IntegrityError
 from django.core.paginator import Paginator
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 import json
 from datetime import datetime, timedelta, time
 import random
@@ -84,22 +85,21 @@ def _get_booking_group_payment(booking_group):
         return None
 
 
-def _get_booking_group_for_customer_checkout(request, booking_group_id):
+def _assert_customer_owns_booking_group(request, booking_group):
     """
-    Allow payment pages when the user owns the booking (logged-in), when the
-    booking id is stored in session after /book-seats/, or when a valid signed
-    ?checkout= token is present (guests — fixes missing session cookies on some hosts).
+    Allow access when the user owns the booking (logged-in), when the booking id
+    is stored in session after /book-seats/, or when a valid signed ?checkout=
+    token is present (guests).
     """
-    booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
     if request.user.is_authenticated:
         if booking_group.passenger.email.strip().lower() != _passenger_email_for_user(request.user):
             raise Http404
-        return booking_group
+        return
 
     checkout_raw = request.session.get('checkout_booking_group_id')
     try:
         if int(checkout_raw) == booking_group.id:
-            return booking_group
+            return
     except (TypeError, ValueError):
         pass
 
@@ -109,8 +109,27 @@ def _get_booking_group_for_customer_checkout(request, booking_group_id):
         if vid is not None and int(vid) == booking_group.id:
             request.session['checkout_booking_group_id'] = booking_group.id
             request.session.modified = True
-            return booking_group
+            return
     raise Http404
+
+
+def _get_booking_group_for_customer_checkout(request, booking_group_id):
+    """
+    Allow payment pages when the user owns the booking (logged-in), when the
+    booking id is stored in session after /book-seats/, or when a valid signed
+    ?checkout= token is present (guests — fixes missing session cookies on some hosts).
+    """
+    booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
+    _assert_customer_owns_booking_group(request, booking_group)
+    return booking_group
+
+
+def _redirect_booking_success(request, booking_group_id):
+    """Redirect to reservation receipt; guests need signed checkout in the query string."""
+    params = {'bg': str(int(booking_group_id))}
+    if not request.user.is_authenticated:
+        params['checkout'] = sign_checkout_token(int(booking_group_id))
+    return redirect(reverse('booking_success') + '?' + urlencode(params))
 
 
 def release_expired_pending_reservations(schedule=None):
@@ -257,30 +276,40 @@ def register(request):
     else:
         form = RegistrationForm()
     return render(request, 'NelsaApp/register.html', {'form':form})
+def _safe_login_redirect_url(request, url: str) -> str | None:
+    """Allow relative paths and same-host absolute URLs only (open-redirect safe)."""
+    if not url or not str(url).strip():
+        return None
+    url = str(url).strip()
+    if url_has_allowed_host_and_scheme(
+        url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return url
+    return None
+
+
 def Login_view(request):
+    next_url_param = (request.POST.get('next') or request.GET.get('next') or '').strip()
     if request.method == 'POST':
         form = LoginForm(request=request, data=request.POST)
         if form.is_valid():
-            username = form.cleaned_data.get('username')
-            password = form.cleaned_data.get('password')
-            user = authenticate(request, username=username, password=password)
-            if user is not None:
-                login(request, user)
-                messages.success(request, f"Welcome back, {user.username}!")
+            # AuthenticationForm already verified credentials in clean(); reuse that user.
+            user = form.get_user()
+            login(request, user)
+            messages.success(request, f"Welcome back, {user.username}!")
 
-                if user.is_staff:
-                    return redirect('admin_dashboard')
-                else:
-                    next_url = request.GET.get('next')
-                    if next_url:
-                        return redirect(next_url)
-                    else:
-                        return redirect('index')
-            else:
-                messages.error(request, "Invalid username or password.")
+            if user.is_staff:
+                return redirect('admin_dashboard')
+
+            safe_next = _safe_login_redirect_url(request, next_url_param)
+            if safe_next:
+                return redirect(safe_next)
+            return redirect('index')
     else:
         form = LoginForm()
-    return render(request, 'NelsaApp/login.html', {'form': form})
+    return render(request, 'NelsaApp/login.html', {'form': form, 'next': next_url_param})
 
 def logout_view(request):
     logout(request)
@@ -452,13 +481,17 @@ def booking_page(request):
         return _booking_fallback('Something went wrong loading this page. Please try again in a moment.')
 
 def book_success(request):
-    # Get the most recent booking for the current user
+    """Legacy success URL: send users to the unified receipt page when possible."""
     if request.user.is_authenticated:
-        booking = Booking.objects.filter(passenger__email=_passenger_email_for_user(request.user)).order_by('-booking_date').first()
-    else:
-        booking = None
-    
-    return render(request, 'NelsaApp/booking_success.html', {'booking': booking})
+        booking = (
+            Booking.objects.filter(passenger__email=_passenger_email_for_user(request.user))
+            .order_by('-booking_date')
+            .first()
+        )
+        if booking and booking.booking_group_id:
+            return redirect(reverse('booking_success') + '?' + urlencode({'bg': str(booking.booking_group_id)}))
+    messages.info(request, 'Sign in to view your booking receipt.')
+    return redirect('booking')
 
 def seat_booking(request, bus_id):
     bus = get_object_or_404(Bus, id=bus_id)
@@ -739,22 +772,71 @@ def book_seats_api(request):
             status=500,
         )
 
-@login_required
 def booking_success_view(request):
-    """View for the booking success page."""
-    # Get the most recent booking for the current user
-    if request.user.is_authenticated:
-        booking = Booking.objects.filter(passenger__email=_passenger_email_for_user(request.user)).order_by('-booking_date').first()
+    """
+    Reservation receipt / success page.
+
+    Prefer `?bg=<booking_group_id>` (and optional `checkout=` for guests) so the
+    receipt matches the booking just paid for. Falls back to the user's latest booking.
+    """
+    bg_param = (request.GET.get('bg') or request.GET.get('booking_group') or '').strip()
+    booking_group = None
+    booking = None
+
+    if bg_param:
+        try:
+            bg_id = int(bg_param)
+        except (TypeError, ValueError):
+            messages.error(request, 'Invalid booking reference.')
+            return redirect('booking')
+        booking_group = get_object_or_404(
+            BookingGroup.objects.select_related(
+                'passenger', 'schedule__route', 'schedule__bus', 'verified_by'
+            ).prefetch_related('bookings'),
+            pk=bg_id,
+        )
+        _assert_customer_owns_booking_group(request, booking_group)
+    elif request.user.is_authenticated:
+        booking = (
+            Booking.objects.filter(passenger__email=_passenger_email_for_user(request.user))
+            .select_related(
+                'passenger',
+                'schedule__route',
+                'schedule__bus',
+                'booking_group',
+                'booking_group__passenger',
+                'booking_group__schedule__route',
+                'booking_group__schedule__bus',
+                'booking_group__verified_by',
+            )
+            .order_by('-booking_date')
+            .first()
+        )
+        if booking and booking.booking_group_id:
+            booking_group = booking.booking_group
     else:
-        booking = None
+        messages.info(
+            request,
+            'Sign in to view your booking receipt, or use the link from your payment confirmation.',
+        )
+        return redirect('Login')
 
-    ctx = {'booking': booking}
-    if booking and booking.booking_group_id:
-        tid = booking.booking_group_id
-        token = sign_booking_group_ticket(tid)
-        ctx['ticket_verify_url'] = request.build_absolute_uri(reverse('verify_ticket')) + '?' + urlencode({'t': token})
-        ctx['ticket_qr_url'] = request.build_absolute_uri(reverse('ticket_qr_png')) + '?' + urlencode({'t': token})
+    if not booking_group:
+        messages.warning(request, 'No booking receipt found.')
+        return redirect('booking')
 
+    seats = sorted(booking_group.bookings.values_list('seat_number', flat=True))
+    payment = _get_booking_group_payment(booking_group)
+
+    token = sign_booking_group_ticket(booking_group.id)
+    ctx = {
+        'booking_group': booking_group,
+        'seats': seats,
+        'payment': payment,
+        'booking': booking or booking_group.bookings.select_related('passenger', 'schedule__route', 'schedule__bus').first(),
+        'ticket_verify_url': request.build_absolute_uri(reverse('verify_ticket')) + '?' + urlencode({'t': token}),
+        'ticket_qr_url': request.build_absolute_uri(reverse('ticket_qr_png')) + '?' + urlencode({'t': token}),
+    }
     return render(request, 'NelsaApp/booking_success.html', ctx)
 
 # Admin booking management views
@@ -1472,6 +1554,8 @@ def user_profile(request):
     pending_bookings = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user), status='Pending').count()
     cancelled_bookings = BookingGroup.objects.filter(passenger__email=_passenger_email_for_user(request.user), status='Cancelled').count()
     
+    passenger = Passenger.objects.filter(email=_passenger_email_for_user(request.user)).first()
+
     context = {
         'booking_groups': booking_groups,
         'total_bookings': total_bookings,
@@ -1481,8 +1565,9 @@ def user_profile(request):
         'search_query': search_query,
         'status_filter': status_filter,
         'date_filter': date_filter,
+        'passenger': passenger,
     }
-    
+
     return render(request, 'NelsaApp/user_profile.html', context)
 
 @login_required
@@ -1815,7 +1900,7 @@ def payment_page(request, booking_group_id):
     payment = _get_booking_group_payment(booking_group)
     if payment is not None and payment.status == 'COMPLETED':
         messages.info(request, 'Payment for this booking has already been completed.')
-        return redirect('booking_success')
+        return _redirect_booking_success(request, booking_group.id)
 
     checkout_q = (request.GET.get('checkout') or '').strip()
     return render(
@@ -1835,7 +1920,7 @@ def start_payment(request, booking_group_id):
     payment = _get_booking_group_payment(booking_group)
     if payment is not None and payment.status == 'COMPLETED':
         messages.info(request, 'Payment for this booking has already been completed.')
-        return redirect('booking_success')
+        return _redirect_booking_success(request, booking_group.id)
 
     payment_method = (request.POST.get('payment_method') or '').strip().upper()
     checkout_token = (request.POST.get('checkout') or '').strip()
@@ -1862,7 +1947,7 @@ def process_payment(request, payment_method, booking_group_id):
     payment = _get_booking_group_payment(booking_group)
     if payment is not None and payment.status == 'COMPLETED':
         messages.info(request, 'Payment for this booking has already been completed.')
-        return redirect('booking_success')
+        return _redirect_booking_success(request, booking_group.id)
     
     # Validate payment method
     valid_methods = [method[0] for method in Payment.PAYMENT_METHODS]
@@ -1937,10 +2022,16 @@ def verify_payment(request):
         booking_group.status = 'Pending'
         booking_group.save(update_fields=['transaction_id', 'transaction_verified', 'status'])
 
+        receipt_params = {'bg': str(booking_group.id)}
+        if not request.user.is_authenticated:
+            receipt_params['checkout'] = sign_checkout_token(booking_group.id)
+        redirect_url = reverse('booking_success') + '?' + urlencode(receipt_params)
+
         return JsonResponse(
             {
                 'success': True,
                 'message': 'Payment submitted. Awaiting secure provider verification.',
+                'redirect_url': redirect_url,
             }
         )
     

@@ -1,11 +1,37 @@
 from django import forms
 from .models import Login, Booking, Passenger
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm, UsernameField
 from django.contrib.auth.models import User
 
+_LOGIN_INPUT_CLASS = (
+    "login-field block w-full rounded-xl border border-slate-200/90 bg-white px-4 py-3.5 pl-12 "
+    "text-slate-800 placeholder-slate-400 shadow-inner shadow-slate-900/5 transition "
+    "focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/15"
+)
+
+
 class LoginForm(AuthenticationForm):
-    username = forms.CharField(widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Username'}))
-    password = forms.CharField(widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'Password'}))
+    # UsernameField matches Django’s auth validators (same as default AuthenticationForm).
+    username = UsernameField(
+        label="Username",
+        widget=forms.TextInput(
+            attrs={
+                "class": _LOGIN_INPUT_CLASS,
+                "placeholder": "Enter your username",
+                "autocomplete": "username",
+            }
+        ),
+    )
+    password = forms.CharField(
+        label="Password",
+        widget=forms.PasswordInput(
+            attrs={
+                "class": _LOGIN_INPUT_CLASS,
+                "placeholder": "Enter your password",
+                "autocomplete": "current-password",
+            }
+        ),
+    )
 
 
 class RegistrationForm(UserCreationForm):

@@ -242,7 +242,8 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        window.location.href = '/booking-success/';
+                        var nextUrl = data.redirect_url || ('/booking-success/?bg=' + encodeURIComponent(String({{ booking_group.id }})));
+                        window.location.href = nextUrl;
                     } else {
                         alert(data.message || 'Verification failed. Please try again.');
                     }
