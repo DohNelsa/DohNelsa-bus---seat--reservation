@@ -6,6 +6,7 @@ urlpatterns = [
     path('health/ready/', views.health_ready, name='health_ready'),
     path('internal/metrics/', views.internal_metrics, name='internal_metrics'),
     path('sitemap.xml', views.sitemap_xml, name='sitemap_xml'),
+    path('robots.txt', views.robots_txt, name='robots_txt'),
     path('googlea0b32e245a16c475.html', views.google_verification, name='google_verification'),
     path('', views.index, name = 'index'),
     path('register/', views.register, name = 'user-register'),

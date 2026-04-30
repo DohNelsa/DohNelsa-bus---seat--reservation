@@ -3464,14 +3464,77 @@ def send_email(request):
         status_message = f"Failed to send email: {e}"
 
 
+def _seo_public_base(request):
+    """Canonical site origin for sitemaps/robots (uses PUBLIC_SITE_URL in production)."""
+    pub = getattr(settings, "PUBLIC_SITE_URL", "").strip().rstrip("/")
+    if not pub or "127.0.0.1" in pub or "localhost" in pub:
+        return f"{request.scheme}://{request.get_host()}"
+    return pub
+
+
+@require_GET
+def sitemap_xml(request):
+    """
+    XML sitemap for search engines. URLs follow reverse() names; base URL from env or request.
+    """
+    from xml.sax.saxutils import escape as xml_escape
+
+    from django.urls import reverse
+
+    base = _seo_public_base(request)
+    lastmod = timezone.now().date().isoformat()
+    entries = [
+        ("index", 1.0, "daily"),
+        ("about_view", 0.8, "weekly"),
+        ("services", 0.8, "weekly"),
+        ("routes", 0.8, "weekly"),
+        ("booking", 0.9, "daily"),
+        ("book", 0.3, "monthly"),
+        ("contact", 0.7, "weekly"),
+        ("Login", 0.4, "monthly"),
+        ("user-register", 0.4, "monthly"),
+    ]
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for name, priority, changefreq in entries:
+        path = reverse(name)
+        loc = f"{base}{path}"
+        lines.append("  <url>")
+        lines.append(f"    <loc>{xml_escape(loc)}</loc>")
+        lines.append(f"    <lastmod>{lastmod}</lastmod>")
+        lines.append(f"    <changefreq>{changefreq}</changefreq>")
+        lines.append(f"    <priority>{priority}</priority>")
+        lines.append("  </url>")
+    lines.append("</urlset>")
+    return HttpResponse("\n".join(lines) + "\n", content_type="application/xml; charset=utf-8")
+
+
+@require_GET
+def robots_txt(request):
+    base = _seo_public_base(request)
+    sitemap_url = f"{base}/sitemap.xml"
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "\n"
+        "Disallow: /admin/\n"
+        "Disallow: /admin-dashboard/\n"
+        "Disallow: /internal/\n"
+        "Disallow: /webhooks/\n"
+        "Disallow: /health/\n"
+        "\n"
+        f"Sitemap: {sitemap_url}\n"
+    )
+    return HttpResponse(body, content_type="text/plain; charset=utf-8")
+
+
 def google_verification(request):
     file_path = os.path.join(
         settings.BASE_DIR, 'static', 'googlea0b32e245a16c475.html'
     )
+    if not os.path.isfile(file_path):
+        raise Http404("Verification file not found")
     return FileResponse(open(file_path, 'rb'))
-
-
-def sitemap_xml(request):
-    file_path = os.path.join(settings.BASE_DIR, 'static', 'sitemap.xml')
-    return FileResponse(open(file_path, 'rb'), content_type='application/xml')
 

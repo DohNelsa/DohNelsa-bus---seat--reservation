@@ -4,7 +4,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}NelsaNdo Bus Booking{% endblock %}</title>
+    <title>{% block title %}MOGHAMO EXPRESS — Bus tickets online in Cameroon{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}{{ seo_default_description }}{% endblock %}">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    <meta name="theme-color" content="#1e3a8a">
+    <link rel="canonical" href="{% block canonical_link %}{{ canonical_url }}{% endblock %}">
+    <meta property="og:locale" content="en_CM">
+    <meta property="og:site_name" content="MOGHAMO EXPRESS">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{% block og_url %}{{ canonical_url }}{% endblock %}">
+    <meta property="og:title" content="{% block og_title %}MOGHAMO EXPRESS — Book bus tickets online in Cameroon{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{{ seo_default_description }}{% endblock %}">
+    <meta property="og:image" content="{{ og_image }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{% block twitter_title %}MOGHAMO EXPRESS — Book bus tickets online in Cameroon{% endblock %}">
+    <meta name="twitter:description" content="{% block twitter_desc %}{{ seo_default_description }}{% endblock %}">
+    <meta name="twitter:image" content="{{ og_image }}">
+    <script type="application/ld+json">{{ organization_json_ld|safe }}</script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com/3.4.5?plugins=forms@0.5.7,typography@0.5.13,aspect-ratio@0.4.2,container-queries@0.1.1"></script>
@@ -17,7 +33,7 @@
             <div class="flex justify-between h-16">
                 <div class="flex">
                     <div class="flex-shrink-0 flex items-center">
-                        <img class="h-8 w-auto" src="https://ai-public.creatie.ai/gen_page/logo_placeholder.png" alt="NELSBUS">
+                        <img class="h-8 w-auto" src="https://ai-public.creatie.ai/gen_page/logo_placeholder.png" alt="MOGHAMO EXPRESS">
                     </div>
                     <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
                         <a href="{% url 'index' %}" class="border-transparent text-gray-500 hover:text-gray-700 inline-flex items-center px-1 pt-1 text-sm font-medium">Home</a>
@@ -104,8 +120,13 @@
                     </ul>
                 </div>
             </div>
-            <div class="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-                <p>&copy; 2025 MOGHAMO EXPRESS. All rights reserved.</p>
+            <div class="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400 text-sm">
+                <p>&copy; {% now "Y" %} MOGHAMO EXPRESS. All rights reserved.</p>
+                <p class="mt-2 space-x-3">
+                    <a href="{% url 'sitemap_xml' %}" class="hover:text-white">Sitemap</a>
+                    <span aria-hidden="true">·</span>
+                    <a href="{% url 'robots_txt' %}" class="hover:text-white">Robots</a>
+                </p>
             </div>
         </div>
     </footer>
