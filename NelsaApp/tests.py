@@ -92,6 +92,47 @@ class HardeningTests(TestCase):
         self.assertNotEqual(resp.status_code, 200)
         self.assertTrue(AdminAuditLog.objects.filter(action="access_denied").exists())
 
+    @override_settings(
+        WHATSAPP_ENABLED=True,
+        WHATSAPP_PROVIDER="mock",
+        WHATSAPP_ADMIN_HANDOFF=True,
+        NOTIFICATION_FLUSH_JOBS_INLINE=True,
+    )
+    def test_superuser_can_confirm_and_cancel_without_ops_group(self):
+        su = User.objects.create_superuser(username="su1", password="pw12345", email="su@example.com")
+        self.client.login(username="su1", password="pw12345")
+        bg = BookingGroup.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            total_amount=5000,
+            status="Pending",
+            transaction_id="",
+            transaction_verified=False,
+        )
+        Booking.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            seat_number=9,
+            status="Pending",
+            booking_group=bg,
+        )
+        detail = self.client.get(reverse("admin_booking_detail", kwargs={"booking_group_id": bg.id}))
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, "Confirm reservation")
+        self.assertNotContains(detail, "Missing confirm permission")
+
+        confirm = self.client.post(reverse("admin_confirm_booking", kwargs={"booking_group_id": bg.id}))
+        self.assertEqual(confirm.status_code, 302)
+        bg.refresh_from_db()
+        self.assertEqual(bg.status, "Confirmed")
+        self.assertTrue(bg.transaction_verified)
+        self.assertTrue(bg.transaction_id)
+
+        cancel = self.client.post(reverse("admin_cancel_booking", kwargs={"booking_group_id": bg.id}))
+        self.assertEqual(cancel.status_code, 302)
+        bg.refresh_from_db()
+        self.assertEqual(bg.status, "Cancelled")
+
     def test_state_changing_admin_actions_are_post_only(self):
         self._grant(self.staff, "cancel_bookinggroup")
         self.client.login(username="staff1", password="pw12345")
@@ -103,7 +144,7 @@ class HardeningTests(TestCase):
         self.client.login(username="u1", password="pw12345")
         payload = {
             "schedule_id": self.schedule.id,
-            "seat_ids": [1],
+            "seat_ids": [5],
             "customer_name": "User One",
             "customer_phone": "+237675315422",
         }
@@ -116,7 +157,13 @@ class HardeningTests(TestCase):
         body2 = r2.json()
         self.assertFalse(body2.get("success"))
 
-    def test_confirm_booking_queues_async_jobs(self):
+    @override_settings(
+        WHATSAPP_ENABLED=True,
+        WHATSAPP_PROVIDER="mock",
+        WHATSAPP_ADMIN_HANDOFF=False,
+        NOTIFICATION_FLUSH_JOBS_INLINE=True,
+    )
+    def test_confirm_booking_sends_whatsapp(self):
         self._grant(self.staff, "confirm_bookinggroup")
         self.client.login(username="staff1", password="pw12345")
         bg = BookingGroup.objects.create(
@@ -127,16 +174,210 @@ class HardeningTests(TestCase):
             payment_waived=True,
             transaction_id="WAIVED-1",
             transaction_verified=True,
+            customer_phone="+237675315422",
         )
-        Booking.objects.create(passenger=self.passenger, schedule=self.schedule, seat_number=4, status="Pending", booking_group=bg)
+        Booking.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            seat_number=4,
+            status="Pending",
+            booking_group=bg,
+        )
         resp = self.client.post(reverse("admin_confirm_booking", kwargs={"booking_group_id": bg.id}))
         self.assertEqual(resp.status_code, 302)
-        self.assertEqual(
-            NotificationJob.objects.filter(
-                booking_group=bg, status="PENDING", job_type="BOOKING_CONFIRMED_EMAIL"
-            ).count(),
-            1,
+        bg.refresh_from_db()
+        self.assertEqual(bg.status, "Confirmed")
+        self.assertEqual(bg.whatsapp_status, "SENT")
+        self.assertTrue(bg.whatsapp_receipt_code)
+
+    @override_settings(
+        WHATSAPP_ENABLED=True,
+        WHATSAPP_PROVIDER="mock",
+        WHATSAPP_ADMIN_HANDOFF=False,
+        NOTIFICATION_FLUSH_JOBS_INLINE=True,
+    )
+    def test_verify_payment_then_confirm_sends_whatsapp(self):
+        self._grant(self.staff, "confirm_bookinggroup")
+        self._grant(self.staff, "access_admin_bookings")
+        self.client.login(username="staff1", password="pw12345")
+        bg = BookingGroup.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            total_amount=5000,
+            status="Pending",
+            transaction_id="MM-12345",
+            transaction_verified=False,
+            customer_phone="+237675315422",
         )
+        Booking.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            seat_number=4,
+            status="Pending",
+            booking_group=bg,
+        )
+        verify = self.client.post(
+            reverse("admin_verify_payment", kwargs={"booking_group_id": bg.id}),
+            data={"transaction_id": "MM-12345"},
+        )
+        self.assertEqual(verify.status_code, 302)
+        bg.refresh_from_db()
+        self.assertTrue(bg.transaction_verified)
+
+        resp = self.client.post(reverse("admin_confirm_booking", kwargs={"booking_group_id": bg.id}))
+        self.assertEqual(resp.status_code, 302)
+        bg.refresh_from_db()
+        self.assertEqual(bg.status, "Confirmed")
+        self.assertEqual(bg.whatsapp_status, "SENT")
+
+    @override_settings(WHATSAPP_ENABLED=True, WHATSAPP_ADMIN_HANDOFF=True, NOTIFICATION_FLUSH_JOBS_INLINE=True)
+    def test_confirm_redirects_to_whatsapp_handoff(self):
+        self._grant(self.staff, "confirm_bookinggroup")
+        self._grant(self.staff, "access_admin_bookings")
+        self.client.login(username="staff1", password="pw12345")
+        bg = BookingGroup.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            total_amount=5000,
+            status="Pending",
+            transaction_id="16643528543",
+            transaction_verified=False,
+            customer_phone="+237675315422",
+        )
+        Booking.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            seat_number=4,
+            status="Pending",
+            booking_group=bg,
+        )
+        resp = self.client.post(reverse("admin_confirm_booking", kwargs={"booking_group_id": bg.id}))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(f"/admin-bookings/{bg.id}/", resp.url)
+        follow = self.client.get(resp.url)
+        self.assertEqual(follow.status_code, 200)
+        self.assertContains(follow, "Open WhatsApp")
+        self.assertContains(follow, "wa.me")
+        bg.refresh_from_db()
+        self.assertEqual(bg.status, "Confirmed")
+        self.assertTrue(bg.whatsapp_receipt_code)
+
+    @override_settings(WHATSAPP_ENABLED=True, WHATSAPP_ADMIN_HANDOFF=True, NOTIFICATION_FLUSH_JOBS_INLINE=True)
+    def test_confirm_without_txn_succeeds_manual_flow(self):
+        self._grant(self.staff, "confirm_bookinggroup")
+        self.client.login(username="staff1", password="pw12345")
+        bg = BookingGroup.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            total_amount=5000,
+            status="Pending",
+            transaction_id="",
+            transaction_verified=False,
+            customer_phone="+237675315422",
+        )
+        Booking.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            seat_number=4,
+            status="Pending",
+            booking_group=bg,
+        )
+        resp = self.client.post(reverse("admin_confirm_booking", kwargs={"booking_group_id": bg.id}))
+        self.assertEqual(resp.status_code, 302)
+        bg.refresh_from_db()
+        self.assertEqual(bg.status, "Confirmed")
+        self.assertTrue(bg.transaction_verified)
+        self.assertEqual(bg.transaction_id, f"MANUAL-{bg.id}")
+        self.assertIn(f"/admin-bookings/{bg.id}/", resp.url)
+
+    @override_settings(WHATSAPP_ENABLED=True, WHATSAPP_ADMIN_HANDOFF=True, NOTIFICATION_FLUSH_JOBS_INLINE=True)
+    def test_confirm_auto_verifies_when_txn_present(self):
+        self._grant(self.staff, "confirm_bookinggroup")
+        self.client.login(username="staff1", password="pw12345")
+        bg = BookingGroup.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            total_amount=5000,
+            status="Pending",
+            transaction_id="MM-99999",
+            transaction_verified=False,
+            customer_phone="+237675315422",
+        )
+        Booking.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            seat_number=4,
+            status="Pending",
+            booking_group=bg,
+        )
+        resp = self.client.post(reverse("admin_confirm_booking", kwargs={"booking_group_id": bg.id}))
+        self.assertEqual(resp.status_code, 302)
+        bg.refresh_from_db()
+        self.assertTrue(bg.transaction_verified)
+        self.assertEqual(bg.status, "Confirmed")
+        self.assertIn(f"/admin-bookings/{bg.id}/", resp.url)
+
+    @override_settings(
+        WHATSAPP_ENABLED=True,
+        WHATSAPP_PROVIDER="mock",
+        WHATSAPP_ADMIN_HANDOFF=False,
+        NOTIFICATION_FLUSH_JOBS_INLINE=True,
+    )
+    def test_verify_and_confirm_in_one_step(self):
+        self._grant(self.staff, "confirm_bookinggroup")
+        self._grant(self.staff, "access_admin_bookings")
+        self.client.login(username="staff1", password="pw12345")
+        bg = BookingGroup.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            total_amount=5000,
+            status="Pending",
+            transaction_id="MM-54321",
+            transaction_verified=False,
+            customer_phone="+237675315422",
+        )
+        Booking.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            seat_number=5,
+            status="Pending",
+            booking_group=bg,
+        )
+        resp = self.client.post(
+            reverse("admin_verify_and_confirm_booking", kwargs={"booking_group_id": bg.id}),
+            data={"transaction_id": "MM-54321"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        bg.refresh_from_db()
+        self.assertTrue(bg.transaction_verified)
+        self.assertEqual(bg.status, "Confirmed")
+        self.assertEqual(bg.whatsapp_status, "SENT")
+
+    def test_cancel_booking_post_works(self):
+        self._grant(self.staff, "cancel_bookinggroup")
+        self.client.login(username="staff1", password="pw12345")
+        bg = BookingGroup.objects.create(
+            passenger=self.passenger,
+            schedule=self.schedule,
+            total_amount=5000,
+            status="Pending",
+        )
+        resp = self.client.post(reverse("admin_cancel_booking", kwargs={"booking_group_id": bg.id}))
+        self.assertEqual(resp.status_code, 302)
+        bg.refresh_from_db()
+        self.assertEqual(bg.status, "Cancelled")
+
+    def test_booking_requires_phone(self):
+        self.client.login(username="u1", password="pw12345")
+        payload = {
+            "schedule_id": self.schedule.id,
+            "seat_ids": [5],
+            "customer_name": "User One",
+            "customer_phone": "",
+        }
+        resp = self.client.post(reverse("book_seats_api"), data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json().get("success"))
 
     def test_rebook_flow_creates_new_group_and_cancels_old(self):
         self._grant(self.staff, "manage_refunds_rebooks")
@@ -167,9 +408,9 @@ class HardeningTests(TestCase):
     @override_settings(VERIFY_SMS_RECEIPT_RATE_LIMIT_PER_MIN=2)
     def test_verify_sms_receipt_rate_limited(self):
         for _ in range(2):
-            r = self.client.get(reverse("verify_sms_receipt", kwargs={"code": "MOG-UNKNOWN"}))
+            r = self.client.get(reverse("verify_sms_receipt", kwargs={"code": "GAR-UNKNOWN"}))
             self.assertIn(r.status_code, (404, 400))
-        r3 = self.client.get(reverse("verify_sms_receipt", kwargs={"code": "MOG-UNKNOWN"}))
+        r3 = self.client.get(reverse("verify_sms_receipt", kwargs={"code": "GAR-UNKNOWN"}))
         self.assertEqual(r3.status_code, 429)
 
     def test_user_role_change_is_audited(self):
@@ -181,3 +422,62 @@ class HardeningTests(TestCase):
         self.assertTrue(
             AdminAuditLog.objects.filter(action="user_make_staff", target_type="User", target_id=str(target.id)).exists()
         )
+
+
+class SeatLayoutTests(TestCase):
+    def test_front_row_driver_aisle_and_right_seats(self):
+        from .seating import build_layout_grid
+
+        row0 = build_layout_grid(70)[0]
+        types = [c.get("type") for c in row0["cells"]]
+        seats = [c["seat_number"] for c in row0["cells"] if c.get("type") == "seat"]
+        self.assertEqual(types, ["seat", "aisle", "seat", "seat"])
+        self.assertEqual(seats, [1, 2, 3])
+
+    def test_second_row_three_left_aisle_two_right(self):
+        from .seating import build_layout_grid
+
+        row1 = build_layout_grid(70)[1]
+        seats = [c["seat_number"] for c in row1["cells"] if c.get("type") == "seat"]
+        self.assertEqual(seats, [4, 5, 6, 7, 8])
+        self.assertEqual(
+            [c.get("type") for c in row1["cells"]],
+            ["seat", "seat", "seat", "aisle", "seat", "seat"],
+        )
+
+    def test_third_row_numbering(self):
+        from .seating import build_layout_grid
+
+        row2 = build_layout_grid(70)[2]
+        seats = [c["seat_number"] for c in row2["cells"] if c.get("type") == "seat"]
+        self.assertEqual(seats, [9, 10, 11, 12, 13])
+
+    def test_get_seats_api_returns_aisle_layout(self):
+        bus = Bus.objects.create(bus_number="BUS-LAY", bus_type="Standard", capacity=70, is_available=True)
+        route = Route.objects.create(
+            start_location="Douala",
+            end_location="Yaounde",
+            distance=240,
+            duration=4,
+            price=5000,
+        )
+        now = timezone.now()
+        schedule = Schedule.objects.create(
+            bus=bus,
+            route=route,
+            departure_time=now + timedelta(days=1),
+            arrival_time=now + timedelta(days=1, hours=4),
+            price=5000,
+            is_available=True,
+        )
+        resp = Client().get(reverse("get_seats", kwargs={"schedule_id": schedule.id}))
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data.get("layout", {}).get("type"), "3-plus-2")
+        row1_seats = [
+            c["seat_number"]
+            for c in data["rows"][1]["cells"]
+            if c.get("type") == "seat" and c.get("seat_number")
+        ]
+        self.assertEqual(row1_seats, [4, 5, 6, 7, 8])
+        self.assertEqual(data.get("layout_version"), 5)

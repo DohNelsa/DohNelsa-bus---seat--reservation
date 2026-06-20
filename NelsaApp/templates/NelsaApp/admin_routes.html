@@ -1,5 +1,6 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
+{% load currency %}
 
 {% block title %}Manage Routes - Admin{% endblock %}
 
@@ -39,7 +40,7 @@
         <div class="stat-card">
             <i class="fas fa-money-bill-wave"></i>
             <h3>Average Price</h3>
-            <p class="stat-number">{{ avg_price }} FCFA</p>
+            <p class="stat-number">{{ avg_price|fcfa }} FCFA</p>
         </div>
     </div>
 
@@ -95,7 +96,7 @@
                         <td>{{ route.distance }} km</td>
                         <td>{{ route.duration }} hours</td>
                         <td>
-                            <span class="price-tag">{{ route.price }} FCFA</span>
+                            <span class="price-tag">{{ route.price|fcfa }} FCFA</span>
                         </td>
                         <td>
                             <div class="action-buttons">
@@ -166,7 +167,7 @@
                 <div class="route-details">
                     <p><i class="fas fa-road"></i> {{ route.distance }} km</p>
                     <p><i class="fas fa-clock"></i> {{ route.duration }} hours</p>
-                    <p><i class="fas fa-money-bill-wave"></i> {{ route.price }} FCFA</p>
+                    <p><i class="fas fa-money-bill-wave"></i> {{ route.price|fcfa }} FCFA</p>
                 </div>
                 <a href="{% url 'admin_route_detail' route.id %}" class="btn btn-sm btn-primary">View Details</a>
             </div>

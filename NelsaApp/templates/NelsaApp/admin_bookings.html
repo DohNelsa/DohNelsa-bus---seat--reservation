@@ -1,5 +1,6 @@
 {% extends 'NelsaApp/admin.html' %}
 {% load static %}
+{% load currency %}
 
 {% block title %}Manage Bookings - NelsaNdo{% endblock %}
 
@@ -8,6 +9,10 @@
     <div class="admin-header">
         <h1>Manage Bookings</h1>
         <p>View and manage all bus bookings organized by customer</p>
+        <p class="mt-2 text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 inline-block">
+            <i class="fas fa-lightbulb mr-1" aria-hidden="true"></i>
+            To <strong>Confirm</strong> or <strong>Cancel</strong>, click <strong>View</strong> on a row — actions appear at the top of the booking page (not on the main dashboard).
+        </p>
     </div>
 
     <!-- Booking Statistics -->
@@ -150,7 +155,7 @@
                         </div>
                     </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {{ booking_group.total_amount }} frs
+                            {{ booking_group.total_amount|fcfa }} FCFA
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div>{{ booking_group.schedule.departure_time|date:"M d, Y" }}</div>
@@ -184,16 +189,19 @@
                                 <a href="{% url 'admin_booking_detail' booking_group.id %}" class="text-blue-600 hover:text-blue-900">
                                     <i class="fas fa-eye"></i> View
                                 </a>
-                                {% if booking_group.status == 'Pending' %}
-                                <a href="{% url 'admin_confirm_booking' booking_group.id %}" class="text-green-600 hover:text-green-900" onclick="return confirm('Are you sure you want to confirm this booking group?')">
+                                {% if booking_group.status == 'Pending' and show_booking_confirm_actions %}
+                                <a href="{% url 'admin_booking_detail' booking_group.id %}#confirm-booking-form" class="text-green-600 hover:text-green-900 text-sm font-medium" title="{% if not booking_group.ready_to_confirm and not user.is_superuser %}{{ booking_group.confirm_block_reason }}{% else %}Confirm this booking{% endif %}">
                                     <i class="fas fa-check"></i> Confirm
                                 </a>
                                 {% endif %}
-                                {% if booking_group.status != 'Cancelled' %}
-                                <a href="{% url 'admin_cancel_booking' booking_group.id %}" class="text-red-600 hover:text-red-900" onclick="return confirm('Are you sure you want to cancel this booking group?')">
-                                    <i class="fas fa-times"></i> Cancel
-                                </a>
-                        {% endif %}
+                                {% if booking_group.status != 'Cancelled' and show_booking_cancel_actions %}
+                                <form method="post" action="{% url 'admin_cancel_booking' booking_group.id %}" class="inline" onsubmit="return confirm('Cancel this booking group?')">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-red-600 hover:text-red-900 bg-transparent border-0 p-0 cursor-pointer text-sm font-medium">
+                                        <i class="fas fa-times"></i> Cancel
+                                    </button>
+                                </form>
+                                {% endif %}
                             </div>
                     </td>
                 </tr>

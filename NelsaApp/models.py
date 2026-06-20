@@ -50,10 +50,19 @@ class Route(models.Model):
 class Passenger(models.Model):
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
-    phone = models.CharField(max_length=15, unique=True)
+    phone = models.CharField(max_length=20, blank=True, db_index=True)
 
     def _str_(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        if self.phone:
+            from .phone_utils import normalize_cameroon_phone
+
+            normalized = normalize_cameroon_phone(self.phone)
+            if normalized:
+                self.phone = normalized
+        super().save(*args, **kwargs)
 
 class Schedule(models.Model):
     bus = models.ForeignKey(Bus, on_delete=models.CASCADE)
@@ -105,6 +114,21 @@ class BookingGroup(models.Model):
     sms_retry_count = models.PositiveIntegerField(default=0)
     sms_last_attempt_at = models.DateTimeField(null=True, blank=True)
     sms_sent_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='sms_sent_bookings')
+
+    # WhatsApp booking confirmation (passenger phone from booking form)
+    customer_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="WhatsApp/phone number entered at booking time (E.164, e.g. +237699123456).",
+    )
+    whatsapp_receipt_code = models.CharField(max_length=40, unique=True, blank=True, null=True)
+    whatsapp_status = models.CharField(max_length=20, choices=SMS_STATUS_CHOICES, default='NOT_SENT')
+    whatsapp_sent_at = models.DateTimeField(null=True, blank=True)
+    whatsapp_message_hash = models.CharField(max_length=64, blank=True, null=True)
+    whatsapp_error_message = models.TextField(blank=True, null=True)
+    whatsapp_retry_count = models.PositiveIntegerField(default=0)
+    whatsapp_last_attempt_at = models.DateTimeField(null=True, blank=True)
 
     # Refund / rebooking (operations + finance)
     refund_status = models.CharField(
@@ -420,6 +444,7 @@ class NotificationJob(models.Model):
     JOB_TYPES = [
         ("BOOKING_CONFIRMED_SMS", "Booking confirmed SMS"),
         ("BOOKING_CONFIRMED_EMAIL", "Booking confirmed email"),
+        ("BOOKING_CONFIRMED_WHATSAPP", "Booking confirmed WhatsApp"),
     ]
     STATUS_CHOICES = [
         ("PENDING", "Pending"),

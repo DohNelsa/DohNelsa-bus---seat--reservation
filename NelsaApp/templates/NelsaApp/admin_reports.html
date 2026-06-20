@@ -1,5 +1,6 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
+{% load currency %}
 
 {% block title %}Admin Reports - NelsaNdo{% endblock %}
 
@@ -69,7 +70,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                     <div class="bg-blue-50 p-4 rounded-lg">
                         <div class="text-sm font-medium text-blue-600">Total Revenue</div>
-                        <div class="text-2xl font-bold text-blue-900">{{ report_data.total_revenue }} FCFA</div>
+                        <div class="text-2xl font-bold text-blue-900">{{ report_data.total_revenue|fcfa }} FCFA</div>
                     </div>
                     <div class="bg-green-50 p-4 rounded-lg">
                         <div class="text-sm font-medium text-green-600">Total Bookings</div>
@@ -77,11 +78,11 @@
                     </div>
                     <div class="bg-purple-50 p-4 rounded-lg">
                         <div class="text-sm font-medium text-purple-600">Avg per Booking</div>
-                        <div class="text-2xl font-bold text-purple-900">{{ report_data.avg_revenue_per_booking|floatformat:0 }} FCFA</div>
+                        <div class="text-2xl font-bold text-purple-900">{{ report_data.avg_revenue_per_booking|fcfa }} FCFA</div>
                     </div>
                     <div class="bg-orange-50 p-4 rounded-lg">
                         <div class="text-sm font-medium text-orange-600">All Time Revenue</div>
-                        <div class="text-2xl font-bold text-orange-900">{{ report_data.total_revenue_all_time }} FCFA</div>
+                        <div class="text-2xl font-bold text-orange-900">{{ report_data.total_revenue_all_time|fcfa }} FCFA</div>
                     </div>
                 </div>
 
@@ -98,7 +99,7 @@
                                         <p class="text-sm text-gray-600">{{ day_data.passenger_count }} passengers</p>
                                     </div>
                                     <div class="text-right">
-                                        <div class="text-xl font-bold text-green-600">{{ day_data.total_revenue }} FCFA</div>
+                                        <div class="text-xl font-bold text-green-600">{{ day_data.total_revenue|fcfa }} FCFA</div>
                                         <div class="text-sm text-gray-500">Daily Total</div>
                                     </div>
                                 </div>
@@ -135,7 +136,7 @@
                                             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ booking.route }}</td>
                                             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ booking.seat_number }}</td>
                                             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ booking.booking_time }}</td>
-                                            <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium text-green-600">{{ booking.amount }} FCFA</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium text-green-600">{{ booking.amount|fcfa }} FCFA</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -161,7 +162,7 @@
                             {% for route_data in report_data.top_routes_by_revenue %}
                             <div class="flex justify-between items-center p-3 bg-white rounded-lg">
                                 <div class="text-sm font-medium text-gray-900">{{ route_data.route }}</div>
-                                <div class="text-sm font-semibold text-green-600">{{ route_data.revenue }} FCFA</div>
+                                <div class="text-sm font-semibold text-green-600">{{ route_data.revenue|fcfa }} FCFA</div>
                             </div>
                             {% endfor %}
                         </div>
@@ -178,7 +179,7 @@
                             {% for bus_type, revenue in report_data.bus_type_revenue.items %}
                             <div class="flex justify-between items-center p-3 bg-white rounded-lg">
                                 <div class="text-sm font-medium text-gray-900">{{ bus_type }}</div>
-                                <div class="text-sm font-semibold text-blue-600">{{ revenue }} FCFA</div>
+                                <div class="text-sm font-semibold text-blue-600">{{ revenue|fcfa }} FCFA</div>
                             </div>
                             {% endfor %}
                         </div>

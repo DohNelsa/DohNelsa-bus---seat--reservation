@@ -4,6 +4,7 @@ from django.utils import timezone
 from .models import BookingGroup, NotificationJob
 from .notifications import send_booking_confirmed_email
 from .sms import send_booking_confirmed_sms
+from .whatsapp import send_booking_confirmed_whatsapp
 
 
 def enqueue_notification_job(booking_group_id: int, job_type: str, payload=None) -> NotificationJob:
@@ -20,11 +21,14 @@ def process_one_notification_job(job: NotificationJob) -> bool:
     job.save(update_fields=["status", "updated_at"])
     try:
         bg = BookingGroup.objects.get(pk=job.booking_group_id)
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        source = payload.get("source") or "booking_confirmed"
         if job.job_type == "BOOKING_CONFIRMED_EMAIL":
-            send_booking_confirmed_email(bg, source="admin")
-            ok = True
+            ok = bool(send_booking_confirmed_email(bg, source=source))
         elif job.job_type == "BOOKING_CONFIRMED_SMS":
-            ok = send_booking_confirmed_sms(bg, source="admin")
+            ok = send_booking_confirmed_sms(bg, source=source)
+        elif job.job_type == "BOOKING_CONFIRMED_WHATSAPP":
+            ok = send_booking_confirmed_whatsapp(bg, source=source)
         else:
             raise ValueError(f"Unsupported job type: {job.job_type}")
 

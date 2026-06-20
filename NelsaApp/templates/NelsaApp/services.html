@@ -1,12 +1,18 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
 
-{% block title %}Services — MOGHAMO EXPRESS{% endblock %}
+{% block title %}Services — GARANTI EXPRESS{% endblock %}
 
 {% block extra_head %}
 <style>
     .services-hero-gradient {
-        background: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 58, 138, 0.78) 50%, rgba(15, 23, 42, 0.9) 100%);
+        background: linear-gradient(
+            105deg,
+            rgba(15, 23, 42, 0.92) 0%,
+            rgba(30, 58, 138, 0.75) 40%,
+            rgba(15, 23, 42, 0.12) 58%,
+            rgba(15, 23, 42, 0.88) 100%
+        );
     }
     .services-grid-bg {
         background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23fff' fill-opacity='0.05'%3E%3Cpath d='M0 40L40 0H20L0 20M40 40V20L20 40'/%3E%3C/g%3E%3C/svg%3E");
@@ -19,7 +25,7 @@
     <!-- Hero -->
     <section class="relative overflow-hidden">
         <div class="relative min-h-[min(48vh,380px)] flex items-end sm:items-center">
-            <img class="absolute inset-0 h-full w-full object-cover" src="{% static 'img2.jpg' %}" alt="" width="1600" height="900" fetchpriority="high">
+            <img class="garanti-brand-photo-hero absolute inset-0 h-full w-full" src="{% static 'garanti-home-bus.png' %}" alt="GARANTI EXPRESS coach with GE crown logo" width="1600" height="900" fetchpriority="high">
             <div class="absolute inset-0 services-hero-gradient"></div>
             <div class="absolute inset-0 services-grid-bg opacity-70"></div>
             <div class="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 lg:py-24">
@@ -50,14 +56,14 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="max-w-3xl mx-auto text-center">
                 <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Core services</h2>
-                <p class="mt-4 text-lg text-slate-600">Pick the experience that fits your trip — all with MOGHAMO EXPRESS reliability and support.</p>
+                <p class="mt-4 text-lg text-slate-600">Bus travel, parcel delivery, and more — all with GARANTI EXPRESS reliability and support.</p>
             </div>
 
             <div class="mt-14 grid gap-8 lg:grid-cols-3">
                 <!-- Regular -->
                 <article class="group flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_4px_6px_-1px_rgba(15,23,42,0.06),0_10px_20px_-5px_rgba(15,23,42,0.08)] transition hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(15,23,42,0.12)]">
                     <div class="relative h-52 overflow-hidden bg-slate-200">
-                        <img class="h-full w-full object-cover transition duration-500 group-hover:scale-105" src="{% static 'img1.jpg' %}" alt="Regular intercity bus service">
+                        <img class="garanti-brand-photo-card h-full w-full transition duration-500 group-hover:scale-105" src="{% static 'garanti-home-bus.png' %}" alt="GARANTI EXPRESS regular intercity service">
                         <div class="absolute top-4 left-4 rounded-full bg-white/95 px-3 py-1 text-xs font-bold uppercase tracking-wide text-blue-700 shadow">Popular</div>
                     </div>
                     <div class="flex flex-1 flex-col p-6 sm:p-7">
@@ -83,7 +89,7 @@
                 <!-- Luxury -->
                 <article class="group flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_4px_6px_-1px_rgba(15,23,42,0.06),0_10px_20px_-5px_rgba(15,23,42,0.08)] transition hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(15,23,42,0.12)]">
                     <div class="relative h-52 overflow-hidden bg-slate-200">
-                        <img class="h-full w-full object-cover transition duration-500 group-hover:scale-105" src="{% static 'image.png' %}" alt="Premium coach travel">
+                        <img class="garanti-brand-photo-card h-full w-full transition duration-500 group-hover:scale-105" src="{% static 'garanti-home-bus.png' %}" alt="GARANTI EXPRESS premium coach travel">
                         <div class="absolute top-4 left-4 rounded-full bg-white/95 px-3 py-1 text-xs font-bold uppercase tracking-wide text-indigo-700 shadow">Premium</div>
                     </div>
                     <div class="flex flex-1 flex-col p-6 sm:p-7">
@@ -106,31 +112,31 @@
                     </div>
                 </article>
 
-                <!-- Special / groups -->
+                <!-- Mail services -->
                 <article class="group flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_4px_6px_-1px_rgba(15,23,42,0.06),0_10px_20px_-5px_rgba(15,23,42,0.08)] transition hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(15,23,42,0.12)]">
                     <div class="relative h-52 overflow-hidden bg-slate-200">
-                        <img class="h-full w-full object-cover transition duration-500 group-hover:scale-105" src="{% static 'img2.jpg' %}" alt="Group and charter services">
-                        <div class="absolute top-4 left-4 rounded-full bg-white/95 px-3 py-1 text-xs font-bold uppercase tracking-wide text-slate-700 shadow">Groups</div>
+                        <img class="h-full w-full object-cover object-center transition duration-500 group-hover:scale-105" src="{% static 'garanti-mail-services-clean.png' %}" alt="GARANTI EXPRESS mail and parcel handling" loading="lazy" decoding="async">
+                        <div class="absolute top-4 left-4 rounded-full bg-white/95 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-700 shadow">Parcels</div>
                     </div>
                     <div class="flex flex-1 flex-col p-6 sm:p-7">
-                        <h3 class="text-xl font-bold text-slate-900">Special &amp; group services</h3>
-                        <p class="mt-2 text-sm leading-relaxed text-slate-600">Charters, events, and corporate travel — coordinated transport when you need more than one seat.</p>
+                        <h3 class="text-xl font-bold text-slate-900">Mail services</h3>
+                        <p class="mt-2 text-sm leading-relaxed text-slate-600">Send letters and packages between cities on our network — fast handover at the terminal and tracking you can trust.</p>
                         <ul class="mt-5 space-y-2.5 text-sm text-slate-700">
                             <li class="flex gap-2.5 rounded-lg bg-slate-50 px-3 py-2">
                                 <i class="fas fa-check-circle text-emerald-500 mt-0.5 shrink-0" aria-hidden="true"></i>
-                                <span>Group bookings and corporate travel</span>
+                                <span>Intercity parcels on scheduled departures</span>
                             </li>
                             <li class="flex gap-2.5 rounded-lg bg-slate-50 px-3 py-2">
                                 <i class="fas fa-check-circle text-emerald-500 mt-0.5 shrink-0" aria-hidden="true"></i>
-                                <span>Event shuttles</span>
+                                <span>Secure packaging and labelled dispatch</span>
                             </li>
                             <li class="flex gap-2.5 rounded-lg bg-slate-50 px-3 py-2">
                                 <i class="fas fa-check-circle text-emerald-500 mt-0.5 shrink-0" aria-hidden="true"></i>
-                                <span>Custom timing — contact us to plan</span>
+                                <span>Drop-off and collection at our terminals</span>
                             </li>
                         </ul>
                         <a href="{% url 'contact' %}" class="mt-6 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition-colors">
-                            Enquire for groups
+                            Enquire about mail
                         </a>
                     </div>
                 </article>

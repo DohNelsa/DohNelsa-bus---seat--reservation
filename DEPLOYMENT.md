@@ -27,7 +27,7 @@ git push -u origin main
 ### 3. Configure Service Settings
 
 #### Basic Settings:
-- **Name**: `moghamo-express` (or your preferred name)
+- **Name**: `GARANTI EXPRESS-express` (or your preferred name)
 - **Region**: Choose closest to your users (e.g., `Oregon`, `Frankfurt`, `Singapore`)
 - **Branch**: `main`
 - **Root Directory**: Leave empty or set to `Nelsaproject` if your project structure requires it
@@ -78,10 +78,10 @@ If you need a database:
 Click **"Create Web Service"** and wait for deployment (5-10 minutes)
 
 ### 7. After Deployment
-1. **Update ALLOWED_HOSTS**: Once deployed, Render gives you a URL like `https://moghamo-express.onrender.com`
+1. **Update ALLOWED_HOSTS**: Once deployed, Render gives you a URL like `https://GARANTI EXPRESS-express.onrender.com`
    - Go to Environment tab
-   - Update `ALLOWED_HOSTS` to: `moghamo-express.onrender.com` (your actual app name)
-   - Update `CSRF_TRUSTED_ORIGINS` to: `https://moghamo-express.onrender.com`
+   - Update `ALLOWED_HOSTS` to: `GARANTI EXPRESS-express.onrender.com` (your actual app name)
+   - Update `CSRF_TRUSTED_ORIGINS` to: `https://GARANTI EXPRESS-express.onrender.com`
 
 2. **Run Migrations** (if needed):
    - Use Render Shell or add this to build command:

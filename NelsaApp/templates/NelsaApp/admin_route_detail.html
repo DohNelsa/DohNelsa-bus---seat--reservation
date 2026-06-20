@@ -1,5 +1,6 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
+{% load currency %}
 
 {% block title %}Route Details - Admin{% endblock %}
 
@@ -39,7 +40,7 @@
             <div class="overview-card">
                 <i class="fas fa-money-bill-wave"></i>
                 <h3>Base Price</h3>
-                <p>{{ route.price }} FCFA</p>
+                <p>{{ route.price|fcfa }} FCFA</p>
             </div>
         </div>
     </div>
@@ -65,7 +66,7 @@
             </div>
             <div class="stat-card">
                 <h3>Total Revenue</h3>
-                <p class="stat-number">{{ total_revenue }} FCFA</p>
+                <p class="stat-number">{{ total_revenue|fcfa }} FCFA</p>
             </div>
         </div>
     </div>
@@ -78,7 +79,7 @@
             <p>This route has been used with the following prices in schedules:</p>
             <div class="price-tags">
                 {% for price in price_history %}
-                <span class="price-tag">{{ price }} FCFA</span>
+                <span class="price-tag">{{ price|fcfa }} FCFA</span>
                 {% endfor %}
             </div>
         </div>
@@ -113,7 +114,7 @@
                         <td>{{ schedule.departure_time|date:"M d, Y H:i" }}</td>
                         <td>{{ schedule.arrival_time|date:"M d, Y H:i" }}</td>
                         <td>
-                            <span class="price-tag">{{ schedule.price }} FCFA</span>
+                            <span class="price-tag">{{ schedule.price|fcfa }} FCFA</span>
                         </td>
                         <td>
                             <span class="status-badge {% if schedule.is_available %}status-available{% else %}status-unavailable{% endif %}">

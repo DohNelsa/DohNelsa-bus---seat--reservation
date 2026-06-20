@@ -6,10 +6,16 @@ Use SMS_PROVIDER=mock for local/dev without sending real SMS.
 
 import logging
 import hashlib
-import secrets
 
 from django.conf import settings
 from django.utils import timezone
+
+from .booking_receipt import (
+    build_booking_confirmation_message,
+    format_departure_parts,
+    validate_receipt_message,
+)
+from .phone_utils import normalize_cameroon_phone
 
 logger = logging.getLogger(__name__)
 
@@ -71,65 +77,6 @@ def send_sms(to_number: str, message: str) -> tuple[bool, str | None]:
     return False, f"Unsupported SMS provider '{provider}'."
 
 
-def _build_receipt_code() -> str:
-    # Short human-enterable code (still unique enough for this use case).
-    # Park staff can validate it via the backend endpoint (cannot be forged).
-    token = secrets.token_hex(6).upper()  # 12 chars
-    return f"MOG-{token}"
-
-
-def _validate_receipt_message(*, message: str, passenger_name: str, date_str: str, time_str: str, bus_type: str, seat_numbers_str: str) -> bool:
-    """
-    Ensure the receipt message includes the critical fields.
-
-    This is used to decide whether we are allowed to set sms_status='SENT'.
-    """
-    checks = [
-        "MOGHAMO" in message.upper(),
-        passenger_name.strip() and passenger_name.strip() in message,
-        date_str in message,
-        time_str in message,
-        bus_type.strip() and bus_type.strip() in message,
-        seat_numbers_str in message,
-    ]
-    return all(checks)
-
-
-def _format_departure_parts(dt):
-    # Deterministic formatting so both message + validation use same strings.
-    local_dt = timezone.localtime(dt)
-    date_str = local_dt.strftime("%Y-%m-%d")
-    time_str = local_dt.strftime("%H:%M")
-    return date_str, time_str
-
-
-def _build_booking_sms_receipt(bg, *, source: str) -> tuple[str, str]:
-    """
-    Returns (receipt_code, message).
-    Message is intentionally short and structured like a mini-receipt.
-    """
-    company = getattr(settings, "COMPANY_NAME", "MOGHAMO EXPRESS")
-    company_word = "MOGHAMO"
-
-    passenger_name = (bg.passenger.name or "").strip()
-    date_str, time_str = _format_departure_parts(bg.schedule.departure_time)
-    bus_type = (bg.schedule.bus.bus_type or "").strip()
-    seat_numbers = sorted(bg.bookings.values_list("seat_number", flat=True))
-    seat_numbers_str = ", ".join(str(s) for s in seat_numbers) if seat_numbers else "—"
-
-    # Use existing code if already generated/sent.
-    receipt_code = bg.sms_receipt_code or _build_receipt_code()
-
-    # Compact mini-receipt format (still includes everything we validate).
-    msg = (
-        f"{company_word} APPROVED | {passenger_name} | "
-        f"{date_str} {time_str} | {bus_type} | "
-        f"Seats:{seat_numbers_str} | Code:{receipt_code}"
-    )
-
-    return receipt_code, msg
-
-
 def send_booking_confirmed_sms(booking_group, *, source: str = "payment") -> bool:
     """
     Send the booking confirmation SMS receipt to the passenger (one canonical message).
@@ -155,8 +102,8 @@ def send_booking_confirmed_sms(booking_group, *, source: str = "payment") -> boo
     bg.save(update_fields=["sms_retry_count", "sms_last_attempt_at"])
 
     passenger = bg.passenger
-    phone = (getattr(passenger, "phone", "") or "").strip()
-    if not phone.startswith("+237"):
+    phone = normalize_cameroon_phone((getattr(passenger, "phone", "") or "").strip())
+    if not phone or not phone.startswith("+237"):
         logger.warning("Passenger phone must start with +237. bg=%s phone=%s", bg.id, phone)
         bg.sms_status = "FAILED"
         bg.sms_error_message = "Passenger phone must start with +237."
@@ -167,16 +114,15 @@ def send_booking_confirmed_sms(booking_group, *, source: str = "payment") -> boo
     route = schedule.route
     bus = schedule.bus
 
-    receipt_code, msg = _build_booking_sms_receipt(bg, source=source)
+    receipt_code, msg = build_booking_confirmation_message(bg)
 
-    # Validate required info is present before we are allowed to update sms_status='SENT'.
     passenger_name = (bg.passenger.name or "").strip()
-    date_str, time_str = _format_departure_parts(bg.schedule.departure_time)
+    date_str, time_str = format_departure_parts(bg.schedule.departure_time)
     bus_type = (bg.schedule.bus.bus_type or "").strip()
     seat_numbers = sorted(bg.bookings.values_list("seat_number", flat=True))
     seat_numbers_str = ", ".join(str(s) for s in seat_numbers) if seat_numbers else "—"
 
-    if not _validate_receipt_message(
+    if not validate_receipt_message(
         message=msg,
         passenger_name=passenger_name,
         date_str=date_str,

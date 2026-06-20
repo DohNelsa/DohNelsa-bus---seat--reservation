@@ -20,7 +20,7 @@
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Seat numbers (exactly {{ seat_count }}, space- or comma-separated)</label>
-            <input type="text" name="seat_numbers" required placeholder="e.g. 3 4 5" class="w-full rounded border-gray-300 font-mono text-sm" />
+            <input type="text" name="seat_numbers" required placeholder="e.g. 3 4 5 (seat 1 is driver — not assignable)" class="w-full rounded border-gray-300 font-mono text-sm" />
         </div>
         <p class="text-xs text-gray-500">The current booking will be cancelled and seats released; a new pending group is created with payment waived for staff confirmation.</p>
         <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Create rebook</button>

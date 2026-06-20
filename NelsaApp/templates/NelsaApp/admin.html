@@ -1,13 +1,14 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
+{% load currency %}
 
-{% block title %}Admin Dashboard - NelsaNdo{% endblock %}
+{% block title %}Admin Dashboard - GARANTI EXPRESS{% endblock %}
 
 {% block content %}
 <div class="admin-dashboard">
     <div class="admin-header">
         <h1>Admin Dashboard</h1>
-        <p>Welcome to the NelsaNdo Bus Management System</p>
+        <p>Welcome to the GARANTI EXPRESS operations dashboard</p>
     </div>
 
     <div class="admin-stats">
@@ -50,7 +51,7 @@
             </div>
             <div class="stat-info">
                 <h3 class="stat-title">Total Revenue</h3>
-                <p class="stat-number">{{ total_revenue }} FCFA</p>
+                <p class="stat-number">{{ total_revenue|fcfa }} FCFA</p>
             </div>
         </div>
     </div>
@@ -73,7 +74,7 @@
         </div>
         <div class="action-card">
             <h3>Manage Bookings</h3>
-            <p>View and manage all bus bookings</p>
+            <p>View bookings — open a reservation to confirm or cancel pending tickets</p>
             <a href="{% url 'admin_bookings' %}" class="btn btn-primary">View Bookings</a>
         </div>
         <div class="action-card">
@@ -107,6 +108,58 @@
             <a href="{% url 'fix_passengers' %}" class="btn btn-warning">Fix Passengers</a>
         </div>
     </div>
+
+    {% if show_booking_confirm_actions and pending_bookings %}
+    <div class="admin-pending-bookings mt-8">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+                <h2 class="text-xl font-bold text-slate-800">Pending bookings</h2>
+                <p class="text-sm text-slate-600">{{ pending_bookings_count }} awaiting confirmation — confirm payment after checking MoMo/Orange.</p>
+            </div>
+            <a href="{% url 'admin_bookings' %}?status=Pending" class="text-sm font-semibold text-blue-600 hover:text-blue-800">View all pending →</a>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-semibold text-slate-600">Ref</th>
+                            <th class="px-4 py-3 text-left font-semibold text-slate-600">Passenger</th>
+                            <th class="px-4 py-3 text-left font-semibold text-slate-600">Route</th>
+                            <th class="px-4 py-3 text-left font-semibold text-slate-600">Amount</th>
+                            <th class="px-4 py-3 text-left font-semibold text-slate-600">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for bg in pending_bookings %}
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-4 py-3 font-mono font-medium">{{ bg.booking_ref }}</td>
+                            <td class="px-4 py-3">{{ bg.passenger.name }}</td>
+                            <td class="px-4 py-3">{{ bg.schedule.route.start_location }} → {{ bg.schedule.route.end_location }}</td>
+                            <td class="px-4 py-3 font-semibold">{{ bg.total_amount|fcfa }} FCFA</td>
+                            <td class="px-4 py-3">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <a href="{% url 'admin_booking_detail' bg.id %}" class="text-blue-600 hover:text-blue-800 font-medium">View</a>
+                                    {% if bg.can_confirm_now or show_booking_confirm_actions %}
+                                    <form method="post" action="{% url 'admin_confirm_booking' bg.id %}" class="inline" onsubmit="return confirm('Confirm {{ bg.booking_ref }}? Payment will be marked verified.');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="text-emerald-700 hover:text-emerald-900 font-semibold bg-transparent border-0 p-0 cursor-pointer">
+                                            Confirm
+                                        </button>
+                                    </form>
+                                    {% elif bg.confirm_block_reason %}
+                                    <span class="text-xs text-amber-700" title="{{ bg.confirm_block_reason }}">Needs review</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <style>

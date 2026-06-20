@@ -1,5 +1,6 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
+{% load currency %}
 
 {% block title %}Edit Route - Admin{% endblock %}
 
@@ -83,7 +84,7 @@
             <div class="info-card">
                 <i class="fas fa-money-bill-wave"></i>
                 <h4>Current Price</h4>
-                <p>{{ route.price }} FCFA</p>
+                <p>{{ route.price|fcfa }} FCFA</p>
             </div>
         </div>
     </div>

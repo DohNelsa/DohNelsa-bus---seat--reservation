@@ -1,5 +1,6 @@
 from django import forms
 from .models import Login, Booking, Passenger
+from .phone_utils import normalize_cameroon_phone
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm, UsernameField
 from django.contrib.auth.models import User
 
@@ -45,11 +46,13 @@ class RegistrationForm(UserCreationForm):
     )
     phone_number = forms.CharField(
         required=True,
-        max_length=15,
+        max_length=20,
         label='Phone Number',
         widget=forms.TextInput(attrs={
             'class': 'w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
-            'placeholder': 'Enter your phone number (e.g., +1234567890)'
+            'placeholder': 'e.g. 699123456 (+237 added automatically)',
+            'inputmode': 'tel',
+            'autocomplete': 'tel',
         })
     )
     
@@ -74,12 +77,15 @@ class RegistrationForm(UserCreationForm):
         })
     
     def clean_phone_number(self):
-        phone_number = self.cleaned_data.get('phone_number')
-        if phone_number:
-            # Check if phone number already exists in Passenger model
-            if Passenger.objects.filter(phone=phone_number).exists():
-                raise forms.ValidationError("This phone number is already registered. Please use a different number.")
-        return phone_number
+        raw = (self.cleaned_data.get('phone_number') or '').strip()
+        if not raw:
+            raise forms.ValidationError("Phone number is required.")
+        normalized = normalize_cameroon_phone(raw)
+        if not normalized:
+            raise forms.ValidationError(
+                "Enter a valid Cameroon number (e.g. 699123456 or +237699123456). +237 is added for you."
+            )
+        return normalized
     
     def clean_email(self):
         email = self.cleaned_data.get('email')

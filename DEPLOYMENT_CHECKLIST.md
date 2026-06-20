@@ -1,4 +1,4 @@
-# MOGHAMO Deployment Checklist (Render)
+# GARANTI EXPRESS Deployment Checklist (Render)
 
 Use this runbook before each production release.
 
@@ -23,7 +23,7 @@ Set these in Render service **Environment**.
 - `DEFAULT_FROM_EMAIL=<sender-email>`
 
 ### Branding
-- `COMPANY_NAME=MOGHAMO EXPRESS`
+- `COMPANY_NAME=GARANTI EXPRESS`
 - `COMPANY_SUPPORT_PHONE=+237675315422`
 - `COMPANY_SUPPORT_EMAIL=<support-email>`
 - `PUBLIC_SITE_URL=https://<your-render-service>.onrender.com`

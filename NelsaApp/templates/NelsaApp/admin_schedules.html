@@ -1,5 +1,6 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
+{% load currency %}
 
 {% block title %}Manage Schedules - Admin{% endblock %}
 
@@ -128,7 +129,7 @@
                                 <div class="text-sm text-gray-500">{{ schedule.departure_time|time:"H:i" }}</div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm font-medium text-green-600">{{ schedule.price }} FCFA</div>
+                                <div class="text-sm font-medium text-green-600">{{ schedule.price|fcfa }} FCFA</div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 {% if schedule.is_available %}

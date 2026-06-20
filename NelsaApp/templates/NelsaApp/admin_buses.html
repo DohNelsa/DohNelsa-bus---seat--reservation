@@ -141,7 +141,9 @@
                     {% for bus in buses %}
                     <tr class="hover:bg-gray-50">
                         <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm font-medium text-gray-900">{{ bus.bus_number }}</div>
+                            <a href="{% url 'admin_bus_detail' bus.id %}" class="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded">
+                                {{ bus.bus_number }}
+                            </a>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full
@@ -161,7 +163,7 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div class="flex space-x-2">
-                                <a href="{% url 'admin_bus_detail' bus.id %}" class="text-blue-600 hover:text-blue-900">
+                                <a href="{% url 'admin_bus_detail' bus.id %}" class="text-blue-600 hover:text-blue-900" title="View bus details &amp; manifests">
                                     <i class="fas fa-eye"></i>
                                 </a>
                                 <a href="{% url 'admin_bus_edit' bus.id %}" class="text-green-600 hover:text-green-900">

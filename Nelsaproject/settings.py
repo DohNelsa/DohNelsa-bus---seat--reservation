@@ -11,11 +11,23 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load Nelsaproject/.env for local dev (secrets stay out of git; see .env.example).
+_env_file = BASE_DIR / ".env"
+if _env_file.is_file():
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(_env_file, override=False)
+    except ImportError:
+        pass
 
 
 # Quick-start development settings - unsuitable for production
@@ -27,10 +39,13 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-only-change-me')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # Use environment variable to control DEBUG setting
-# Convert string 'False' to boolean False
-DEBUG_ENV = os.environ.get('DJANGO_DEBUG', 'False')
-DEBUG = DEBUG_ENV.lower() in ('true', '1', 'yes', 'on')
+# Default True for local development, False for production/staging
 DEPLOYMENT_ENV = os.environ.get('DEPLOYMENT_ENV', 'development').strip().lower()
+DEBUG_ENV = os.environ.get('DJANGO_DEBUG')
+if DEBUG_ENV is None:
+    DEBUG = DEPLOYMENT_ENV == 'development'
+else:
+    DEBUG = DEBUG_ENV.lower() in ('true', '1', 'yes', 'on')
 
 # Configure ALLOWED_HOSTS from environment variable or use Render-safe defaults
 ALLOWED_HOSTS_ENV = os.environ.get('ALLOWED_HOSTS', '')
@@ -51,6 +66,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
     'NelsaApp',
 ]
 
@@ -61,6 +78,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'NelsaApp.middleware.RefreshAuthUserMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -79,6 +97,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'NelsaApp.context_processors.site_seo',
+                'NelsaApp.context_processors.admin_booking_permissions',
             ],
         },
     },
@@ -170,6 +189,8 @@ STATICFILES_DIRS = [
 # WhiteNoise: use non-manifest storage so missing images in templates do not 500 in production
 # (Manifest storage requires every {% static %} path to exist after collectstatic.)
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+# In local dev, serve directly from static/ (STATICFILES_DIRS) without running collectstatic each time.
+WHITENOISE_USE_FINDERS = DEBUG or DEPLOYMENT_ENV == 'development'
 
 # Media files
 MEDIA_URL = '/media/'
@@ -188,12 +209,34 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes', 'on')
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@moghamo.local')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@garanti.local')
 
 # Branding / public URLs (used in emails, QR absolute links — set via environment in production)
-COMPANY_NAME = os.environ.get('COMPANY_NAME', 'MOGHAMO EXPRESS')
+COMPANY_NAME = os.environ.get('COMPANY_NAME', 'GARANTI EXPRESS')
 COMPANY_SUPPORT_EMAIL = os.environ.get('COMPANY_SUPPORT_EMAIL', DEFAULT_FROM_EMAIL)
-COMPANY_SUPPORT_PHONE = os.environ.get('COMPANY_SUPPORT_PHONE', '+237675315422')
+# GARANTI fixed contact number (phone, WhatsApp, MoMo instructions, receipts)
+COMPANY_SUPPORT_PHONE = os.environ.get('COMPANY_SUPPORT_PHONE', '+237675315422').strip()
+if COMPANY_SUPPORT_PHONE and not COMPANY_SUPPORT_PHONE.startswith('+'):
+    COMPANY_SUPPORT_PHONE = '+' + COMPANY_SUPPORT_PHONE.lstrip('+')
+# Number and account name shown on payment instructions (MTN/Orange “send to this merchant”).
+_momo_pay_phone = os.environ.get('PAYMENT_MOMO_MERCHANT_PHONE', '').strip().lstrip('+')
+if _momo_pay_phone.startswith('237') and len(_momo_pay_phone) > 3:
+    _momo_pay_phone = _momo_pay_phone[3:]
+if not _momo_pay_phone:
+    _company_digits = re.sub(r'\D', '', COMPANY_SUPPORT_PHONE)
+    _momo_pay_phone = _company_digits[3:] if _company_digits.startswith('237') else _company_digits
+PAYMENT_MOMO_MERCHANT_PHONE = _momo_pay_phone or '675315422'
+_momo_pay_name = os.environ.get('PAYMENT_MOMO_MERCHANT_NAME', 'Doh Nelsa Ijang').strip()
+PAYMENT_MOMO_MERCHANT_NAME = _momo_pay_name or 'Doh Nelsa Ijang'
+# Prefix for pay-by-reference (e.g. GAR + booking group id).
+PAYMENT_REFERENCE_PREFIX = os.environ.get('PAYMENT_REFERENCE_PREFIX', 'GAR')
+# Process email/SMS notification jobs immediately after enqueue (no cron needed). Set False on high load workers.
+NOTIFICATION_FLUSH_JOBS_INLINE = os.environ.get('NOTIFICATION_FLUSH_JOBS_INLINE', 'True').lower() in (
+    'true',
+    '1',
+    'yes',
+    'on',
+)
 PUBLIC_SITE_URL = os.environ.get('PUBLIC_SITE_URL', 'http://127.0.0.1:8000').rstrip('/')
 
 # Payment webhook security
@@ -207,6 +250,17 @@ PAYMENT_WEBHOOK_TRUSTED_IPS = [
     for ip in os.environ.get('PAYMENT_WEBHOOK_TRUSTED_IPS', '').split(',')
     if ip.strip()
 ]
+
+# Payment provider: manual (merchant MoMo/ORANGE/card instructions + transaction ID) or flutterwave (hosted checkout)
+PAYMENT_PROVIDER = os.environ.get('PAYMENT_PROVIDER', 'manual').strip().lower()
+
+# Flutterwave (test keys from https://dashboard.flutterwave.com — use Test mode)
+FLUTTERWAVE_PUBLIC_KEY = os.environ.get('FLUTTERWAVE_PUBLIC_KEY', '').strip()
+FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', '').strip()
+FLUTTERWAVE_ENCRYPTION_KEY = os.environ.get('FLUTTERWAVE_ENCRYPTION_KEY', '').strip()
+FLUTTERWAVE_CURRENCY = os.environ.get('FLUTTERWAVE_CURRENCY', 'XAF')
+# True = local simulate UI when secret key is empty; False = require live/test API keys
+FLUTTERWAVE_SIMULATE = os.environ.get('FLUTTERWAVE_SIMULATE', 'True').lower() in ('true', '1', 'yes', 'on')
 
 # Provider-specific webhook signatures (optional, based on provider)
 PAYSTACK_WEBHOOK_SECRET = os.environ.get('PAYSTACK_WEBHOOK_SECRET', '')
@@ -252,12 +306,53 @@ TICKET_MAX_AGE_SECONDS = int(os.environ.get('TICKET_MAX_AGE_SECONDS', str(120 * 
 # SMS Configuration (all live credentials from environment — no API secrets in code)
 SMS_ENABLED = os.environ.get('SMS_ENABLED', 'True').lower() in ('true', '1', 'yes', 'on')
 SMS_PROVIDER = os.environ.get('SMS_PROVIDER', 'twilio')  # 'mock', 'twilio', or 'africas_talking' (AT not implemented)
-SMS_FROM_NUMBER = os.environ.get('SMS_FROM_NUMBER', '')
+SMS_FROM_NUMBER = os.environ.get('SMS_FROM_NUMBER', '').strip()
 
 # Twilio (required in production when SMS_ENABLED and SMS_PROVIDER=twilio — see _validate_required_env)
-TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
-TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
-TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '').strip().strip('"').strip("'")
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '').strip().strip('"').strip("'")
+# Your Twilio SMS-capable number in E.164 (e.g. +15551234567). SMS_FROM_NUMBER is accepted as an alias.
+TWILIO_PHONE_NUMBER = (
+    os.environ.get('TWILIO_PHONE_NUMBER', '').strip().strip('"').strip("'") or SMS_FROM_NUMBER
+)
+# E.164 or full whatsapp: address, e.g. whatsapp:+14155238886 (Twilio sandbox / Business sender)
+TWILIO_WHATSAPP_FROM = os.environ.get('TWILIO_WHATSAPP_FROM', '').strip().strip('"').strip("'")
+
+# WhatsApp booking confirmations (Twilio WhatsApp API — uses passenger phone from booking)
+WHATSAPP_ENABLED = os.environ.get('WHATSAPP_ENABLED', 'True').lower() in ('true', '1', 'yes', 'on')
+_whatsapp_provider_env = os.environ.get('WHATSAPP_PROVIDER', '').strip().lower()
+try:
+    from NelsaApp.twilio_config import validate_twilio_whatsapp_credentials
+
+    TWILIO_WHATSAPP_CONFIG_ERROR = validate_twilio_whatsapp_credentials(
+        account_sid=TWILIO_ACCOUNT_SID,
+        auth_token=TWILIO_AUTH_TOKEN,
+        whatsapp_from=TWILIO_WHATSAPP_FROM,
+    )
+except Exception:
+    TWILIO_WHATSAPP_CONFIG_ERROR = None
+
+if _whatsapp_provider_env:
+    WHATSAPP_PROVIDER = _whatsapp_provider_env
+elif not TWILIO_WHATSAPP_CONFIG_ERROR:
+    WHATSAPP_PROVIDER = 'twilio'
+else:
+    WHATSAPP_PROVIDER = 'mock'
+# Default: staff sends receipt via Open WhatsApp from GARANTI number (free, no Twilio).
+# Set False only when TWILIO_* credentials are configured for automatic API send.
+WHATSAPP_ADMIN_HANDOFF = os.environ.get('WHATSAPP_ADMIN_HANDOFF', 'True').lower() in (
+    'true',
+    '1',
+    'yes',
+    'on',
+)
+# Also send SMS when WhatsApp is enabled (usually leave False)
+BOOKING_CONFIRMATION_SMS_ALSO = os.environ.get('BOOKING_CONFIRMATION_SMS_ALSO', 'False').lower() in (
+    'true',
+    '1',
+    'yes',
+    'on',
+)
 
 # Africa's Talking Configuration (if using Africa's Talking)
 AFRICASTALKING_API_KEY = os.environ.get('AFRICASTALKING_API_KEY', '')
@@ -289,6 +384,15 @@ def _validate_required_env():
                 'TWILIO_ACCOUNT_SID': TWILIO_ACCOUNT_SID,
                 'TWILIO_AUTH_TOKEN': TWILIO_AUTH_TOKEN,
                 'TWILIO_PHONE_NUMBER': TWILIO_PHONE_NUMBER,
+            }
+        )
+
+    if WHATSAPP_ENABLED and WHATSAPP_PROVIDER == 'twilio':
+        required.update(
+            {
+                'TWILIO_ACCOUNT_SID': TWILIO_ACCOUNT_SID,
+                'TWILIO_AUTH_TOKEN': TWILIO_AUTH_TOKEN,
+                'TWILIO_WHATSAPP_FROM': TWILIO_WHATSAPP_FROM,
             }
         )
 
@@ -425,3 +529,13 @@ else:
             },
         },
     }
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.AllowAny",
+    ),
+}

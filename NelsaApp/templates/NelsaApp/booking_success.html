@@ -1,13 +1,14 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
+{% load currency %}
 
-{% block title %}Reservation receipt — MOGHAMO EXPRESS{% endblock %}
+{% block title %}Reservation receipt — GARANTI EXPRESS{% endblock %}
 
 {% block content %}
 <div class="pt-20 pb-12 bg-gray-50 min-h-screen">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center mb-6">
-            <p class="text-sm font-semibold uppercase tracking-wider text-blue-600">MOGHAMO EXPRESS</p>
+            <p class="text-sm font-semibold uppercase tracking-wider text-blue-600">GARANTI EXPRESS</p>
             <h1 class="mt-2 text-2xl sm:text-3xl font-extrabold text-gray-900">Reservation receipt</h1>
             <p class="mt-2 text-sm text-gray-600">Keep this page for your records. Show the QR at boarding when your booking is confirmed.</p>
         </div>
@@ -104,7 +105,7 @@
                         </div>
                         <div>
                             <dt class="text-gray-500">Total</dt>
-                            <dd class="mt-1 text-2xl font-extrabold text-blue-600">{{ booking_group.total_amount }} <span class="text-base font-semibold text-gray-600">FCFA</span></dd>
+                            <dd class="mt-1 text-2xl font-extrabold text-blue-600">{{ booking_group.total_amount|fcfa }} <span class="text-base font-semibold text-gray-600">FCFA</span></dd>
                         </div>
                         {% if payment %}
                         <div>
@@ -144,7 +145,7 @@
                     <h2 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Agency approval</h2>
                     {% if booking_group.status == 'Confirmed' %}
                     <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                        <p class="font-semibold"><i class="fas fa-check-circle mr-2"></i>Confirmed by MOGHAMO EXPRESS</p>
+                        <p class="font-semibold"><i class="fas fa-check-circle mr-2"></i>Confirmed by GARANTI EXPRESS</p>
                         {% if booking_group.verified_by %}
                         <p class="mt-1 text-emerald-800">
                             Staff: {{ booking_group.verified_by.get_full_name|default:booking_group.verified_by.username }}
@@ -159,7 +160,7 @@
                     {% else %}
                     <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                         <p class="font-semibold"><i class="fas fa-info-circle mr-2"></i>Pending confirmation</p>
-                        <p class="mt-1 text-amber-800">Your reference is on file. Final approval is completed by MOGHAMO EXPRESS staff after verification.</p>
+                        <p class="mt-1 text-amber-800">Your reference is on file. Final approval is completed by GARANTI EXPRESS staff after verification.</p>
                     </div>
                     {% endif %}
                     {% if booking_group.sms_receipt_code %}

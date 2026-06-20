@@ -5,8 +5,8 @@ Signed digital ticket tokens (QR payloads) using Django's signing framework.
 from django.conf import settings
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 
-TICKET_SALT = "moghamo.ticket.v1"
-CHECKOUT_SALT = "moghamo.checkout.v1"
+TICKET_SALT = "garanti.ticket.v1"
+CHECKOUT_SALT = "garanti.checkout.v1"
 
 
 def _signing_key():

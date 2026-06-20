@@ -1,4 +1,4 @@
-# Operations runbook (Nelsa / MOGHAMO EXPRESS)
+# Operations runbook (Nelsa / GARANTI EXPRESS)
 
 ## 1) Production data-layer baseline
 

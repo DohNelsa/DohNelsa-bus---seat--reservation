@@ -31,6 +31,8 @@ urlpatterns = [
     path('admin-bookings/', views.admin_bookings, name='admin_bookings'),
     path('admin-bookings/<int:booking_group_id>/', views.admin_booking_detail, name='admin_booking_detail'),
     path('admin-bookings/<int:booking_group_id>/confirm/', views.admin_confirm_booking, name='admin_confirm_booking'),
+    path('admin-bookings/<int:booking_group_id>/verify-payment/', views.admin_verify_payment, name='admin_verify_payment'),
+    path('admin-bookings/<int:booking_group_id>/verify-and-confirm/', views.admin_verify_and_confirm_booking, name='admin_verify_and_confirm_booking'),
     path('admin-bookings/<int:booking_group_id>/resend-sms/', views.admin_resend_sms_receipt, name='admin_resend_sms_receipt'),
     path('admin-bookings/<int:booking_group_id>/cancel/', views.admin_cancel_booking, name='admin_cancel_booking'),
     path('admin-bookings/<int:booking_group_id>/request-refund/', views.admin_request_refund, name='admin_request_refund'),
@@ -54,6 +56,8 @@ urlpatterns = [
     path('payment/<int:booking_group_id>/start/', views.start_payment, name='start_payment'),
     path('process-payment/<str:payment_method>/<int:booking_group_id>/', views.process_payment, name='process_payment'),
     path('verify-payment/', views.verify_payment, name='verify_payment'),
+    path('payment/<int:booking_group_id>/flutterwave/callback/', views.flutterwave_callback, name='flutterwave_callback'),
+    path('payment/<int:booking_group_id>/flutterwave/simulate/', views.flutterwave_simulate_pay, name='flutterwave_simulate_pay'),
     path('webhooks/payment/', views.payment_webhook, name='payment_webhook'),
     
     # Bus management routes

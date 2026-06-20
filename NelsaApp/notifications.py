@@ -36,7 +36,7 @@ def send_booking_confirmed_email(booking_group, *, source: str = "payment") -> b
         logger.exception("Could not reload booking group for notification: %s", exc)
         return False
 
-    company = getattr(settings, "COMPANY_NAME", "MOGHAMO EXPRESS")
+    company = getattr(settings, "COMPANY_NAME", "GARANTI EXPRESS")
     support_email = getattr(settings, "COMPANY_SUPPORT_EMAIL", settings.DEFAULT_FROM_EMAIL)
     support_phone = getattr(settings, "COMPANY_SUPPORT_PHONE", "")
     site_url = getattr(settings, "PUBLIC_SITE_URL", "").rstrip("/")

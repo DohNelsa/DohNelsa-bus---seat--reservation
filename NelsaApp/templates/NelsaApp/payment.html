@@ -1,7 +1,8 @@
 {% extends 'NelsaApp/base.html' %}
 {% load static %}
+{% load currency %}
 
-{% block title %}Payment - MOGHAMO EXPRESS{% endblock %}
+{% block title %}Payment - GARANTI EXPRESS{% endblock %}
 
 {% block content %}
 <div class="pt-20 pb-12">
@@ -14,7 +15,7 @@
                     </div>
                     <div class="ml-3">
                         <h2 class="text-xl font-bold text-white">Complete Your Payment</h2>
-                        <p class="text-blue-100">Select your preferred payment method</p>
+                        <p class="text-blue-100">{% if flutterwave_checkout %}Pay securely with Flutterwave (MTN, Orange, card){% else %}MTN Mobile Money, Orange Money, or card — step-by-step instructions on the next page{% endif %}</p>
                     </div>
                 </div>
             </div>
@@ -50,7 +51,7 @@
                             </div>
                             <div class="sm:col-span-1">
                                 <dt class="text-sm font-medium text-gray-500">Total Amount</dt>
-                                <dd class="mt-1 text-lg font-bold text-blue-600">{{ booking_group.total_amount }} FCFA</dd>
+                                <dd class="mt-1 text-lg font-bold text-blue-600">{{ booking_group.total_amount|fcfa }} FCFA</dd>
                             </div>
                         </dl>
                     </div>
@@ -61,6 +62,15 @@
                     {% if checkout_token %}
                     <input type="hidden" name="checkout" value="{{ checkout_token }}">
                     {% endif %}
+                <div class="mb-4 rounded-lg border {% if flutterwave_checkout %}border-indigo-100 bg-indigo-50 text-indigo-900{% else %}border-emerald-100 bg-emerald-50 text-emerald-900{% endif %} px-4 py-3 text-sm">
+                    <i class="fas {% if flutterwave_checkout %}fa-lock text-indigo-600{% else %}fa-mobile-alt text-emerald-600{% endif %} mr-2" aria-hidden="true"></i>
+                    {% if flutterwave_checkout %}
+                    You will be redirected to <strong>Flutterwave</strong> to complete payment. On local dev without API keys, a <strong>simulated checkout</strong> is used for testing.
+                    {% else %}
+                    After you choose a method below, we show our <strong>merchant number</strong>, your <strong>payment reference</strong>, and USSD/card steps — then you submit your transaction ID for staff verification.
+                    {% endif %}
+                </div>
+
                 <div class="mb-6">
                     <h3 class="text-lg font-medium text-gray-900">Select Payment Method</h3>
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -110,8 +120,14 @@
                 </div>
                 
                 <div class="mt-6">
+                    {% if flutterwave_checkout %}
+                    <p class="mb-3 text-xs text-gray-500 flex items-center gap-2">
+                        <i class="fas fa-lock text-green-600" aria-hidden="true"></i>
+                        Secured by Flutterwave · Test mode available for development
+                    </p>
+                    {% endif %}
                     <button type="submit" id="proceedToPayment" class="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200">
-                        Proceed to Payment
+                        {% if flutterwave_checkout %}Continue to Flutterwave{% else %}Continue to payment instructions{% endif %}
                     </button>
                 </div>
             </div>

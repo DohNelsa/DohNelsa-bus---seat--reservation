@@ -28,12 +28,20 @@ from .models import (
     Seat,
     Support,
 )
+from .cities import SERVED_CITIES, sync_default_routes
+from .seating import (
+    build_layout_grid,
+    is_driver_seat,
+    layout_metadata,
+    max_seat_number as seating_max_seat_number,
+    position_for_seat_number,
+)
 from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, Http404, JsonResponse
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Prefetch
 from django.db import DatabaseError, transaction, IntegrityError
 from django.core.paginator import Paginator
 from django.utils import timezone
@@ -55,19 +63,42 @@ import hmac
 
 from .audit import log_admin_action
 from .jobs import enqueue_notification_job
+from .booking_receipt import build_booking_confirmation_message
+from .notification_gateway import queue_booking_confirmation_notifications
+from .twilio_config import should_use_whatsapp_handoff
+from .whatsapp import booking_group_whatsapp_phone, prepare_booking_whatsapp_handoff
 from .monitoring import send_ops_alert
-from .rbac import require_admin_portal, require_perm, user_has_perm
+from .rbac import (
+    require_admin_portal,
+    require_perm,
+    user_has_perm,
+    assign_staff_ops_group,
+    ensure_staff_booking_permissions,
+    ensure_superuser_admin_access,
+    can_confirm_bookings,
+    can_cancel_bookings,
+    effective_is_superuser,
+    refresh_auth_user,
+)
 from .security import ip_allowlist, rate_limit
+from .phone_utils import normalize_cameroon_phone
 from .tickets import (
     sign_booking_group_ticket,
     sign_checkout_token,
     verify_checkout_token,
     verify_ticket_token,
 )
+from . import flutterwave as flw
 
 def _passenger_email_for_user(user):
     """Passenger email key; must match book_seats_api (handles empty User.email)."""
     return (user.email or f"user-{user.id}@example.com").strip().lower()
+
+
+def _passenger_email_for_phone(normalized_phone: str) -> str:
+    """Synthetic Passenger.email for guests who book with phone only (no email field)."""
+    digits = "".join(ch for ch in (normalized_phone or "") if ch.isdigit())
+    return f"guest-{digits or 'unknown'}@garanti.local"
 
 RESERVATION_HOLD_MINUTES = 10
 
@@ -154,44 +185,11 @@ def release_expired_pending_reservations(schedule=None):
         groups.delete()
 
 
-def normalize_cameroon_phone(phone_raw: str) -> str | None:
-    """
-    Normalize and validate a Cameroon phone number.
-
-    Requirement: must start with `+237`.
-    Cameroon numbers are typically 8-9 digits after `+237` (often mobile).
-    Examples accepted: `+237699123456`, `237699123456`, `+237 699 123 456`.
-    """
-    if phone_raw is None:
-        return None
-
-    phone = str(phone_raw).strip()
-    phone = re.sub(r"[\s\-\(\)]", "", phone)  # remove common separators
-
-    # Handle common international prefix variants.
-    if phone.startswith("00"):
-        phone = "+" + phone[2:]
-    if phone.startswith("237") and not phone.startswith("+"):
-        phone = "+237" + phone[3:]
-
-    if not phone.startswith("+237"):
-        return None
-
-    digits = re.sub(r"\D", "", phone)  # keep only digits
-    if not digits.startswith("237"):
-        return None
-
-    national = digits[3:]
-    if len(national) not in (8, 9):
-        return None
-
-    return "+237" + national
-
-
 def _require_valid_passenger_contact(request):
     """
-    Enforce mandatory name + +237 phone before seat booking.
-    Returns a Passenger instance or a JsonResponse-like error tuple.
+    Enforce mandatory name + valid Cameroon phone before seat booking (logged-in users).
+
+    Returns (Passenger instance, None) or (None, JsonResponse error).
     """
     passenger_email = _passenger_email_for_user(request.user)
     passenger = Passenger.objects.filter(email=passenger_email).first()
@@ -200,7 +198,7 @@ def _require_valid_passenger_contact(request):
         return None, JsonResponse(
             {
                 "success": False,
-                "message": "Please complete your profile (Full Name and Phone starting with +237) before booking.",
+                "message": "Please complete your profile (Full Name and Cameroon phone number) before booking.",
             },
             status=400,
         )
@@ -211,7 +209,7 @@ def _require_valid_passenger_contact(request):
         return None, JsonResponse(
             {
                 "success": False,
-                "message": "Your profile needs a valid Full Name and a Phone starting with +237 before booking. Go to My Profile to update.",
+                "message": "Your profile needs a valid Full Name and Cameroon phone before booking. Go to My Profile to update (enter e.g. 699123456; +237 is added automatically).",
             },
             status=400,
         )
@@ -247,7 +245,7 @@ def register(request):
                 try:
                     user = form.save()
                     login(request, user)
-                    messages.success(request, "Registration successful! Welcome to MOGHAMO EXPRESS!")
+                    messages.success(request, "Registration successful! Welcome to GARANTI EXPRESS!")
                     return redirect('index')
                 except Exception as e:
                     # Handle any other database errors
@@ -298,9 +296,13 @@ def Login_view(request):
             # AuthenticationForm already verified credentials in clean(); reuse that user.
             user = form.get_user()
             login(request, user)
+            ensure_superuser_admin_access(user)
+            refresh_auth_user(user)
+            if user.is_staff and not effective_is_superuser(user):
+                assign_staff_ops_group(user)
             messages.success(request, f"Welcome back, {user.username}!")
 
-            if user.is_staff:
+            if effective_is_superuser(user) or user.is_staff:
                 return redirect('admin_dashboard')
 
             safe_next = _safe_login_redirect_url(request, next_url_param)
@@ -342,6 +344,7 @@ def booking_page(request):
             {
                 'schedules': [],
                 'all_routes': [],
+                'cities': SERVED_CITIES,
                 'from_location': from_location,
                 'to_location': to_location,
                 'date': date,
@@ -368,35 +371,12 @@ def booking_page(request):
             except ValueError:
                 pass
 
-        # Get all available routes for the filter dropdown
+        sync_default_routes()
         all_routes = Route.objects.all().order_by('start_location')
 
         # If no schedules match, seed demo data only when not using filters (avoids seed + wrong queryset on every empty search).
         if not schedules.exists() and not (from_location or to_location or date):
             try:
-                routes_data = [
-                    {'start_location': 'Yaounde', 'end_location': 'Douala', 'distance': 250, 'duration': 4, 'price': 6000},
-                    {'start_location': 'Yaounde', 'end_location': 'Bamenda', 'distance': 350, 'duration': 6, 'price': 9000},
-                    {'start_location': 'Douala', 'end_location': 'Limbe', 'distance': 70, 'duration': 1.5, 'price': 4000},
-                    {'start_location': 'Douala', 'end_location': 'Buea', 'distance': 60, 'duration': 1, 'price': 3000},
-                    {'start_location': 'Bamenda', 'end_location': 'Douala', 'distance': 300, 'duration': 5, 'price': 7000},
-                ]
-
-                for route_data in routes_data:
-                    route, created = Route.objects.get_or_create(
-                        start_location=route_data['start_location'],
-                        end_location=route_data['end_location'],
-                        defaults={
-                            'distance': route_data['distance'],
-                            'duration': route_data['duration'],
-                            'price': route_data['price'],
-                        },
-                    )
-                    if not created:
-                        route.duration = route_data['duration']
-                        route.price = route_data['price']
-                        route.save(update_fields=['duration', 'price'])
-
                 bus_types = ['Luxury', 'Standard', 'Express']
                 for i in range(1, 6):
                     Bus.objects.get_or_create(
@@ -465,6 +445,7 @@ def booking_page(request):
         context = {
             'schedules': schedules,
             'all_routes': all_routes,
+            'cities': SERVED_CITIES,
             'from_location': from_location,
             'to_location': to_location,
             'date': date,
@@ -543,6 +524,10 @@ def book_seat(request):
 @login_required
 @require_admin_portal
 def admin_view(request):
+    refresh_auth_user(request.user)
+    ensure_superuser_admin_access(request.user)
+    ensure_staff_booking_permissions(request.user)
+
     # Get statistics for the dashboard
     total_buses = Bus.objects.count()
     total_bookings = Booking.objects.count()
@@ -556,6 +541,18 @@ def admin_view(request):
     
     # Calculate total revenue by summing up the prices from schedules associated with bookings
     total_revenue = sum(booking.schedule.price for booking in Booking.objects.select_related('schedule').all())
+
+    pending_bookings = (
+        BookingGroup.objects.filter(status="Pending")
+        .select_related("passenger", "schedule__route", "schedule__bus")
+        .order_by("-created_at")[:10]
+    )
+    ref_prefix = getattr(settings, "PAYMENT_REFERENCE_PREFIX", "GAR") or "GAR"
+    for bg in pending_bookings:
+        bg.booking_ref = f"{ref_prefix}-{bg.id}"
+        bg.can_confirm_now, bg.confirm_block_reason = _booking_group_ready_to_confirm(
+            bg, user=request.user
+        )
     
     context = {
         'total_buses': total_buses,
@@ -566,15 +563,37 @@ def admin_view(request):
         'staff_users': staff_users,
         'superusers': superusers,
         'total_revenue': total_revenue,
+        'pending_bookings': pending_bookings,
+        'pending_bookings_count': BookingGroup.objects.filter(status="Pending").count(),
+        **_booking_action_context(request),
     }
     
     return render(request, 'NelsaApp/admin.html', context)
 
 # New views for booking functionality
 
+def _booking_occupies_seat(booking_queryset):
+    """Seats counted as taken for availability (excluding cancelled individual tickets)."""
+    return booking_queryset.exclude(status="Cancelled")
+
+
+@require_GET
 def get_seats(request, schedule_id):
-    """API endpoint to get seats for a specific schedule."""
-    schedule = get_object_or_404(Schedule, id=schedule_id)
+    """API endpoint to get seats for a specific schedule (JSON)."""
+    try:
+        schedule = Schedule.objects.select_related("bus").get(pk=schedule_id)
+    except Schedule.DoesNotExist:
+        return JsonResponse(
+            {"seats": [], "error": "Schedule not found."},
+            status=404,
+        )
+    except Exception:
+        logger.exception("get_seats: failed to load schedule_id=%s", schedule_id)
+        return JsonResponse(
+            {"seats": [], "error": "Could not load schedule."},
+            status=500,
+        )
+
     bus = schedule.bus
 
     # Auto-release expired unpaid pending reservations.
@@ -582,31 +601,64 @@ def get_seats(request, schedule_id):
 
     seats = []
 
-    # Prefer explicit Seat records when they exist for the bus.
-    # Fall back to bus capacity for legacy data.
-    bus_seats = Seat.objects.filter(bus=bus).order_by('row', 'column')
-    if bus_seats.exists():
-        for idx, _seat in enumerate(bus_seats, start=1):
-            is_booked = Booking.objects.filter(schedule=schedule, seat_number=idx).exists()
-            seats.append({
-                'id': idx,
-                'seat_number': idx,
-                'is_booked': is_booked
-            })
-    else:
+    try:
         capacity = bus.capacity or 0
         if capacity <= 0:
             capacity = 40
+        capacity = seating_max_seat_number(capacity)
 
-        for i in range(1, capacity + 1):
-            is_booked = Booking.objects.filter(schedule=schedule, seat_number=i).exists()
-            seats.append({
-                'id': i,
-                'seat_number': i,
-                'is_booked': is_booked
-            })
+        booked_numbers = set(
+            _booking_occupies_seat(Booking.objects.filter(schedule=schedule))
+            .values_list("seat_number", flat=True)
+        )
 
-    return JsonResponse({'seats': seats})
+        for sn in range(1, capacity + 1):
+            is_driver = is_driver_seat(sn)
+            pos = position_for_seat_number(sn)
+            passenger_booked = sn in booked_numbers
+            is_booked = is_driver or passenger_booked
+            seats.append(
+                {
+                    "id": sn,
+                    "seat_number": sn,
+                    "is_booked": is_booked,
+                    "is_driver_seat": is_driver,
+                    "column_key": pos.column_key if pos else None,
+                    "row_index": pos.row if pos else None,
+                    "is_window": pos.column_key in ("L1", "R2") if pos else False,
+                    "position_label": None,
+                }
+            )
+
+        layout_rows = build_layout_grid(capacity)
+        for row in layout_rows:
+            for cell in row.get("cells") or []:
+                if cell.get("type") != "seat" or not cell.get("seat_number"):
+                    continue
+                sn = int(cell["seat_number"])
+                cell["is_booked"] = sn in booked_numbers or is_driver_seat(sn)
+                cell["is_driver_seat"] = is_driver_seat(sn)
+
+    except Exception:
+        logger.exception("get_seats: seat map build failed schedule_id=%s", schedule_id)
+        return JsonResponse(
+            {"seats": [], "error": "Could not build seat map."},
+            status=500,
+        )
+
+    response = JsonResponse(
+        {
+            "seats": seats,
+            "layout": layout_metadata(),
+            "rows": layout_rows,
+            "capacity": capacity,
+            "layout_version": layout_metadata().get("version"),
+        }
+    )
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response["Pragma"] = "no-cache"
+    return response
+
 
 def book_seats_api(request):
     """API endpoint to book seats (logged-in or guest; guest continues to payment via session)."""
@@ -629,16 +681,24 @@ def book_seats_api(request):
 
         if not seat_ids:
             return JsonResponse({'success': False, 'message': 'No valid seats selected'})
-        
+
+        if any(is_driver_seat(s) for s in seat_ids):
+            return JsonResponse(
+                {
+                    "success": False,
+                    "message": "Seat 1 is reserved for the driver and cannot be booked.",
+                },
+                status=400,
+            )
+
         schedule = get_object_or_404(Schedule, id=schedule_id)
 
         # Auto-release expired unpaid pending reservations before seat checks.
         release_expired_pending_reservations(schedule=schedule)
-        
-        # Full name is required; phone is optional.
+
+        # Full name and phone are required (WhatsApp confirmation uses booking phone).
         customer_name = (data.get('customer_name') or '').strip()
         customer_phone_raw = (data.get('customer_phone') or '').strip()
-        customer_email_raw = (data.get('customer_email') or '').strip().lower()
         if not customer_name:
             return JsonResponse(
                 {
@@ -647,62 +707,59 @@ def book_seats_api(request):
                 },
                 status=400,
             )
+        if not customer_phone_raw:
+            return JsonResponse(
+                {
+                    'success': False,
+                    'message': 'Please enter your phone number (WhatsApp) before booking. Use e.g. 699123456; +237 is added automatically.',
+                },
+                status=400,
+            )
+
+        normalized_phone = normalize_cameroon_phone(customer_phone_raw)
+        if not normalized_phone:
+            return JsonResponse(
+                {
+                    'success': False,
+                    'message': 'Invalid phone number. Use a Cameroon number (e.g. 699123456); +237 is added automatically.',
+                },
+                status=400,
+            )
 
         if request.user.is_authenticated:
             passenger_email = _passenger_email_for_user(request.user)
         else:
-            if not customer_email_raw or '@' not in customer_email_raw:
-                return JsonResponse(
-                    {
-                        'success': False,
-                        'message': 'Please enter a valid email address to continue to payment.',
-                    },
-                    status=400,
-                )
-            passenger_email = customer_email_raw
-        normalized_phone = None
-        try:
-            existing_passenger = Passenger.objects.filter(email=passenger_email).first()
-            if customer_phone_raw:
-                normalized_phone = normalize_cameroon_phone(customer_phone_raw)
-                if not normalized_phone:
-                    return JsonResponse(
-                        {
-                            'success': False,
-                            'message': 'Invalid phone number. Phone must start with +237 and contain 8-9 digits after +237.',
-                        },
-                        status=400,
-                    )
-            elif existing_passenger and existing_passenger.phone:
-                normalized_phone = existing_passenger.phone
-            else:
-                normalized_phone = f"+2376{(request.user.id or 0) % 100000000:08d}"
+            passenger_email = _passenger_email_for_phone(normalized_phone)
 
+        try:
             passenger, created = Passenger.objects.get_or_create(
                 email=passenger_email,
                 defaults={'name': customer_name, 'phone': normalized_phone},
             )
             if not created:
                 passenger.name = customer_name
-                if customer_phone_raw and passenger.phone != normalized_phone:
-                    passenger.phone = normalized_phone
+                passenger.phone = normalized_phone
                 passenger.save()
         except IntegrityError:
+            logger.exception("book_seats_api Passenger save integrity error")
             return JsonResponse(
                 {
                     'success': False,
-                    'message': 'This phone number is already used by another passenger. Please use a different phone.',
+                    'message': 'Could not save your booking profile. Please try again.',
                 },
                 status=400,
             )
+
+        if request.user.is_authenticated:
+            _, err_resp = _require_valid_passenger_contact(request)
+            if err_resp is not None:
+                return err_resp
         
         # Ensure selected seat numbers are within available range for this bus
-        bus_seats = Seat.objects.filter(bus=schedule.bus)
-        max_seat_number = bus_seats.count() if bus_seats.exists() else (schedule.bus.capacity or 0)
-        if max_seat_number <= 0:
-            max_seat_number = 40
+        cap = schedule.bus.capacity or 40
+        max_sn = seating_max_seat_number(cap if cap > 0 else 40)
 
-        invalid_seats = [seat_id for seat_id in seat_ids if seat_id > max_seat_number]
+        invalid_seats = [seat_id for seat_id in seat_ids if seat_id > max_sn]
         if invalid_seats:
             return JsonResponse({
                 'success': False,
@@ -711,10 +768,12 @@ def book_seats_api(request):
 
         with transaction.atomic():
             # Lock matching rows and ensure seats are still available
-            existing_bookings = Booking.objects.select_for_update().filter(
-                schedule=schedule,
-                seat_number__in=seat_ids
-            ).values_list('seat_number', flat=True)
+            existing_bookings = (
+                Booking.objects.select_for_update()
+                .filter(schedule=schedule, seat_number__in=seat_ids)
+                .exclude(status="Cancelled")
+                .values_list("seat_number", flat=True)
+            )
 
             already_booked = sorted(existing_bookings)
             if already_booked:
@@ -731,7 +790,8 @@ def book_seats_api(request):
                 passenger=passenger,
                 schedule=schedule,
                 total_amount=total_amount,
-                status='Pending'
+                status='Pending',
+                customer_phone=normalized_phone,
             )
 
             # Create bookings for each seat and link to group
@@ -839,11 +899,189 @@ def booking_success_view(request):
     }
     return render(request, 'NelsaApp/booking_success.html', ctx)
 
+
+def _booking_action_context(request) -> dict:
+    """
+    Resolve confirm/cancel UI flags from the database (not stale session fields).
+    Superusers always get confirm/cancel actions.
+    """
+    from django.contrib.auth.models import User
+
+    refresh_auth_user(request.user)
+    ensure_superuser_admin_access(request.user)
+    ensure_staff_booking_permissions(request.user)
+
+    db_user = User.objects.filter(pk=request.user.pk).only(
+        "is_superuser", "is_staff", "username"
+    ).first()
+    is_super = bool(db_user and db_user.is_superuser)
+    is_staff = bool(db_user and db_user.is_staff)
+
+    if is_super:
+        request.user.is_superuser = True
+        if not request.user.is_staff:
+            request.user.is_staff = True
+
+    can_confirm = is_super or can_confirm_bookings(request.user)
+    can_cancel = is_super or can_cancel_bookings(request.user)
+
+    return {
+        "user_can_confirm": can_confirm,
+        "user_can_cancel": can_cancel,
+        "is_effective_superuser": is_super,
+        "is_booking_admin": is_super or is_staff,
+        "show_booking_confirm_actions": can_confirm,
+        "show_booking_cancel_actions": can_cancel,
+        "signed_in_username": getattr(db_user, "username", request.user.username),
+    }
+
+
+def _booking_group_ready_to_confirm(booking_group, user=None) -> tuple[bool, str]:
+    """Return (ready, reason_if_not_ready) for admin confirmation."""
+    if booking_group.status != "Pending":
+        return False, f"Booking is already {booking_group.status}."
+    # Superuser confirming = payment manually verified; WhatsApp phone not required.
+    if user is not None and effective_is_superuser(user):
+        return True, ""
+    if not booking_group_whatsapp_phone(booking_group):
+        return False, (
+            "No valid WhatsApp phone (+237…) on file — use the number from the booking form "
+            "or ask the customer to rebook with a mobile number."
+        )
+    return True, ""
+
+
+def _ensure_payment_verified_for_confirm(
+    booking_group,
+    user,
+    *,
+    txn_override: str | None = None,
+) -> None:
+    """
+    Manual MoMo flow: staff confirming the booking means they checked payment offline.
+    Persist txn reference if provided; always mark transaction_verified=True.
+    """
+    if booking_group.payment_waived:
+        return
+    txn = (txn_override or booking_group.transaction_id or "").strip()
+    if txn:
+        booking_group.transaction_id = txn
+    elif not (booking_group.transaction_id or "").strip():
+        booking_group.transaction_id = f"MANUAL-{booking_group.id}"
+    booking_group.transaction_verified = True
+    booking_group.verified_by = user
+    booking_group.verified_at = timezone.now()
+    booking_group.save(
+        update_fields=["transaction_id", "transaction_verified", "verified_by", "verified_at"]
+    )
+
+
+@transaction.atomic
+def _apply_booking_group_confirmation(booking_group: BookingGroup, user) -> BookingGroup:
+    """Mark a pending booking group and its seats as confirmed."""
+    locked = BookingGroup.objects.select_for_update().get(pk=booking_group.pk)
+    if locked.status != "Pending":
+        raise ValueError(f"Booking is already {locked.status}.")
+    locked.bookings.update(status="Confirmed")
+    locked.status = "Confirmed"
+    locked.verified_by = user
+    locked.verified_at = timezone.now()
+    locked.save(update_fields=["status", "verified_by", "verified_at"])
+    return locked
+
+
+def _flash_booking_confirm_result(request, booking_group: BookingGroup) -> None:
+    """User-facing messages after a successful admin confirm."""
+    booking_group.refresh_from_db()
+    phone = booking_group.customer_phone or booking_group.passenger.phone
+    if getattr(settings, "WHATSAPP_ENABLED", True):
+        if booking_group.whatsapp_status == "SENT":
+            messages.success(
+                request,
+                f"Booking Group #{booking_group.id} confirmed. WhatsApp confirmation sent to {phone}.",
+            )
+        elif booking_group.whatsapp_status == "FAILED":
+            messages.warning(
+                request,
+                f"Booking Group #{booking_group.id} confirmed, but WhatsApp could not be sent: "
+                f"{booking_group.whatsapp_error_message or 'Unknown error'}. "
+                f"Use Resend WhatsApp on the booking detail page.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Booking Group #{booking_group.id} confirmed. Confirmation notifications queued.",
+            )
+    else:
+        messages.success(
+            request,
+            f"Booking Group #{booking_group.id} confirmed. Confirmation email has been sent (or queued).",
+        )
+
+
+def _whatsapp_preview_for_booking_group(booking_group) -> str:
+    try:
+        _, msg = build_booking_confirmation_message(booking_group, receipt_code="GAR-PREVIEW")
+    except Exception:
+        return ""
+    return msg
+
+
+def _redirect_after_staff_confirm(request, booking_group: BookingGroup, *, source: str):
+    """Queue email + WhatsApp receipt, or wa.me handoff when Twilio is off/unconfigured."""
+    handoff, handoff_reason = should_use_whatsapp_handoff()
+    queue_booking_confirmation_notifications(
+        booking_group.id,
+        source=source,
+        skip_whatsapp=handoff,
+    )
+    log_admin_action(
+        request,
+        "booking_confirm",
+        "BookingGroup",
+        booking_group.id,
+        {
+            "notifications_queued": True,
+            "whatsapp_handoff": handoff,
+            "whatsapp_handoff_fallback": bool(handoff_reason),
+            "whatsapp_auto_send": not handoff and getattr(settings, "WHATSAPP_ENABLED", True),
+            "transaction_id": booking_group.transaction_id,
+        },
+    )
+    if handoff:
+        wa_url, err = prepare_booking_whatsapp_handoff(booking_group)
+        if wa_url:
+            phone = booking_group_whatsapp_phone(booking_group)
+            request.session["whatsapp_handoff_url"] = wa_url
+            if handoff_reason:
+                messages.warning(
+                    request,
+                    f"Booking #{booking_group.id} confirmed. Tap Open WhatsApp below to send the receipt "
+                    f"from GARANTI ({getattr(settings, 'COMPANY_SUPPORT_PHONE', '+237675315422')}).",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Booking #{booking_group.id} confirmed. Open WhatsApp below to send the GARANTI receipt to {phone}.",
+                )
+        else:
+            messages.warning(
+                request,
+                f"Booking #{booking_group.id} confirmed, but WhatsApp link failed: {err}",
+            )
+    else:
+        _flash_booking_confirm_result(request, booking_group)
+    return redirect("admin_booking_detail", booking_group_id=booking_group.id)
+
+
 # Admin booking management views
 @login_required
 @require_perm("access_admin_bookings")
 def admin_bookings(request):
     """Admin view to manage all bookings organized by customer."""
+    refresh_auth_user(request.user)
+    ensure_superuser_admin_access(request.user)
+    ensure_staff_booking_permissions(request.user)
     # Get filter parameters
     search_query = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
@@ -895,6 +1133,11 @@ def admin_bookings(request):
     paginator = Paginator(booking_groups, 15)  # Show 15 booking groups per page
     page = request.GET.get('page')
     booking_groups = paginator.get_page(page)
+
+    for bg in booking_groups:
+        ready, reason = _booking_group_ready_to_confirm(bg, user=request.user)
+        bg.ready_to_confirm = ready
+        bg.confirm_block_reason = reason
     
     # Get booking statistics
     total_bookings = BookingGroup.objects.count()
@@ -919,6 +1162,7 @@ def admin_bookings(request):
         'from_date': from_date,
         'to_date': to_date,
         'customer_filter': customer_filter,
+        **_booking_action_context(request),
     }
     
     return render(request, 'NelsaApp/admin_bookings.html', context)
@@ -927,84 +1171,212 @@ def admin_bookings(request):
 @require_perm("access_admin_bookings")
 def admin_booking_detail(request, booking_group_id):
     """Admin view to see booking group details."""
+    refresh_auth_user(request.user)
+    ensure_superuser_admin_access(request.user)
+    ensure_staff_booking_permissions(request.user)
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
 
     token = sign_booking_group_ticket(booking_group.id)
     ticket_qr_url = request.build_absolute_uri(reverse('ticket_qr_png')) + '?' + urlencode({'t': token})
     ticket_verify_url = request.build_absolute_uri(reverse('verify_ticket')) + '?' + urlencode({'t': token})
 
+    ready_to_confirm, confirm_block_reason = _booking_group_ready_to_confirm(
+        booking_group, user=request.user
+    )
+    whatsapp_phone = (booking_group.customer_phone or booking_group.passenger.phone or "").strip()
+    ref_prefix = getattr(settings, "PAYMENT_REFERENCE_PREFIX", "GAR") or "GAR"
+    seat_numbers = list(
+        booking_group.bookings.order_by("seat_number").values_list("seat_number", flat=True)
+    )
+    open_whatsapp_url = request.session.pop("whatsapp_handoff_url", None)
+
+    action_ctx = _booking_action_context(request)
+
     return render(
         request,
         'NelsaApp/admin_booking_detail.html',
         {
             'booking_group': booking_group,
+            'booking_ref': f"{ref_prefix}-{booking_group.id}",
+            'company_name': getattr(settings, "COMPANY_NAME", "GARANTI EXPRESS"),
+            'seat_numbers': seat_numbers,
+            'seat_count': len(seat_numbers),
+            'open_whatsapp_url': open_whatsapp_url,
             'ticket_qr_url': ticket_qr_url,
             'ticket_verify_url': ticket_verify_url,
             'can_manage_refunds': user_has_perm(request.user, 'manage_refunds_rebooks'),
+            'ready_to_confirm': ready_to_confirm,
+            'confirm_block_reason': confirm_block_reason,
+            'whatsapp_phone': whatsapp_phone,
+            'whatsapp_preview': _whatsapp_preview_for_booking_group(booking_group),
+            **action_ctx,
         },
     )
+
+@login_required
+@require_perm("access_admin_bookings")
+@require_POST
+def admin_verify_payment(request, booking_group_id):
+    """Mark a pending booking's payment as verified so it can be confirmed."""
+    booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
+
+    if booking_group.status != 'Pending':
+        messages.error(request, f'Booking Group #{booking_group.id} is not pending.')
+        return redirect('admin_booking_detail', booking_group_id=booking_group.id)
+
+    txn = (request.POST.get('transaction_id') or booking_group.transaction_id or '').strip()
+    if not txn:
+        messages.error(request, 'Enter the Mobile Money / payment transaction ID before verifying.')
+        return redirect('admin_booking_detail', booking_group_id=booking_group.id)
+
+    booking_group.transaction_id = txn
+    booking_group.transaction_verified = True
+    booking_group.verified_by = request.user
+    booking_group.verified_at = timezone.now()
+    booking_group.save(
+        update_fields=['transaction_id', 'transaction_verified', 'verified_by', 'verified_at']
+    )
+
+    messages.success(
+        request,
+        f'Payment verified for Booking Group #{booking_group.id}. You can now confirm the booking — '
+        f'WhatsApp will be sent to {booking_group.customer_phone or booking_group.passenger.phone or "the passenger phone on file"}.',
+    )
+    log_admin_action(
+        request,
+        'payment_verify',
+        'BookingGroup',
+        booking_group.id,
+        {'transaction_id': txn},
+    )
+    return redirect('admin_booking_detail', booking_group_id=booking_group.id)
 
 @login_required
 @require_perm("confirm_bookinggroup")
 @require_POST
 def admin_confirm_booking(request, booking_group_id):
-    """Admin view to confirm a booking group only if transaction is verified."""
+    """Staff confirms booking after manually checking payment (MoMo / Orange / cash)."""
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
-    
-    if booking_group.status == 'Pending':
-        can_confirm = booking_group.payment_waived or (
-            booking_group.transaction_verified and booking_group.transaction_id
-        )
-        if not can_confirm:
-            messages.error(request, 'Cannot confirm booking. Please verify a valid transaction ID first.')
-            return redirect('admin_booking_detail', booking_group_id=booking_group.id)
-        
-        # Update booking status
-        booking_group.bookings.update(status='Confirmed')
-        booking_group.status = 'Confirmed'
-        booking_group.verified_by = request.user
-        booking_group.verified_at = timezone.now()
-        booking_group.save()
 
-        enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_EMAIL")
-        messages.success(
+    if booking_group.status != "Pending":
+        messages.error(
             request,
-            f"Booking Group #{booking_group.id} confirmed. Email notification queued.",
+            f"Booking Group #{booking_group.id} cannot be confirmed because it is not in Pending status.",
         )
-        log_admin_action(
-            request,
-            'booking_confirm',
-            'BookingGroup',
-            booking_group.id,
-            {'notifications_queued': True, 'transaction_id': booking_group.transaction_id},
-        )
-    else:
-        messages.error(request, f'Booking Group #{booking_group.id} cannot be confirmed because it is not in Pending status.')
-    
-    return redirect('admin_bookings')
+        return redirect("admin_booking_detail", booking_group_id=booking_group.id)
+
+    ready, block_reason = _booking_group_ready_to_confirm(booking_group, user=request.user)
+    if not ready:
+        messages.error(request, block_reason or "Cannot confirm this booking yet.")
+        return redirect("admin_booking_detail", booking_group_id=booking_group.id)
+
+    txn_from_form = (request.POST.get("transaction_id") or "").strip()
+    _ensure_payment_verified_for_confirm(booking_group, request.user, txn_override=txn_from_form or None)
+    booking_group.refresh_from_db()
+
+    try:
+        booking_group = _apply_booking_group_confirmation(booking_group, request.user)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("admin_booking_detail", booking_group_id=booking_group.id)
+
+    return _redirect_after_staff_confirm(request, booking_group, source="staff_confirm")
+
+
+@login_required
+@require_perm("confirm_bookinggroup")
+@require_POST
+def admin_verify_and_confirm_booking(request, booking_group_id):
+    """Verify Mobile Money payment and confirm in one step."""
+    booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
+
+    if booking_group.status != "Pending":
+        messages.error(request, f"Booking Group #{booking_group.id} is not pending.")
+        return redirect("admin_booking_detail", booking_group_id=booking_group.id)
+
+    if not booking_group.payment_waived:
+        txn = (request.POST.get("transaction_id") or booking_group.transaction_id or "").strip()
+        _ensure_payment_verified_for_confirm(booking_group, request.user, txn_override=txn or None)
+        booking_group.refresh_from_db()
+        if txn:
+            log_admin_action(
+                request,
+                "payment_verify",
+                "BookingGroup",
+                booking_group.id,
+                {"transaction_id": txn, "combined_with_confirm": True},
+            )
+
+    ready, block_reason = _booking_group_ready_to_confirm(booking_group, user=request.user)
+    if not ready:
+        messages.error(request, block_reason or "Cannot confirm booking yet.")
+        return redirect("admin_booking_detail", booking_group_id=booking_group.id)
+
+    try:
+        booking_group = _apply_booking_group_confirmation(booking_group, request.user)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("admin_booking_detail", booking_group_id=booking_group.id)
+
+    return _redirect_after_staff_confirm(request, booking_group, source="staff_verify_confirm")
 
 @login_required
 @require_perm("manage_sms_ops")
 @require_POST
 def admin_resend_sms_receipt(request, booking_group_id):
-    """Admin can resend the SMS receipt if the first send failed."""
+    """Admin can resend the WhatsApp (or SMS) receipt if the first send failed."""
     booking_group = get_object_or_404(BookingGroup, id=booking_group_id)
     if booking_group.status != 'Confirmed':
-        messages.error(request, f'Cannot resend SMS: Booking Group #{booking_group.id} is not confirmed.')
+        messages.error(request, f'Cannot resend notification: Booking Group #{booking_group.id} is not confirmed.')
         return redirect('admin_booking_detail', booking_group_id=booking_group.id)
 
-    if booking_group.sms_status == 'SENT':
-        messages.info(request, f'SMS receipt was already sent for Booking Group #{booking_group.id}.')
+    use_whatsapp = getattr(settings, 'WHATSAPP_ENABLED', True)
+    handoff, handoff_reason = should_use_whatsapp_handoff()
+    if use_whatsapp and handoff:
+        wa_url, err = prepare_booking_whatsapp_handoff(booking_group)
+        if wa_url:
+            request.session["whatsapp_handoff_url"] = wa_url
+            messages.success(
+                request,
+                "Tap Open WhatsApp below to send the receipt"
+                + (" (Twilio not configured — manual send from your phone)." if handoff_reason else "."),
+            )
+            log_admin_action(
+                request,
+                'notification_receipt_resend',
+                'BookingGroup',
+                booking_group.id,
+                {'whatsapp_handoff': True},
+            )
+            return redirect('admin_booking_detail', booking_group_id=booking_group.id)
+        messages.error(request, err or 'Could not build WhatsApp link.')
         return redirect('admin_booking_detail', booking_group_id=booking_group.id)
 
-    enqueue_notification_job(booking_group.id, "BOOKING_CONFIRMED_SMS", {"source": "admin-resend"})
-    messages.success(request, f'SMS resend queued for Booking Group #{booking_group.id}.')
+    if use_whatsapp:
+        if booking_group.whatsapp_status == 'SENT':
+            messages.info(request, f'WhatsApp confirmation was already sent for Booking Group #{booking_group.id}.')
+            return redirect('admin_booking_detail', booking_group_id=booking_group.id)
+        job_type = 'BOOKING_CONFIRMED_WHATSAPP'
+        channel = 'WhatsApp'
+    else:
+        if booking_group.sms_status == 'SENT':
+            messages.info(request, f'SMS receipt was already sent for Booking Group #{booking_group.id}.')
+            return redirect('admin_booking_detail', booking_group_id=booking_group.id)
+        job_type = 'BOOKING_CONFIRMED_SMS'
+        channel = 'SMS'
+
+    job = enqueue_notification_job(booking_group.id, job_type, {"source": "admin-resend"})
+    if getattr(settings, 'NOTIFICATION_FLUSH_JOBS_INLINE', True):
+        from .jobs import process_one_notification_job
+
+        process_one_notification_job(job)
+    messages.success(request, f'{channel} resend queued for Booking Group #{booking_group.id}.')
     log_admin_action(
         request,
-        'sms_receipt_resend',
+        'notification_receipt_resend',
         'BookingGroup',
         booking_group.id,
-        {'queued': True},
+        {'queued': True, 'channel': channel.lower()},
     )
     return redirect('admin_booking_detail', booking_group_id=booking_group.id)
 
@@ -1388,6 +1760,10 @@ def admin_rebook_booking(request, booking_group_id):
         messages.error(request, f"Enter exactly {need} seat numbers (same count as original booking).")
         return redirect("admin_rebook_booking", booking_group_id=old.id)
 
+    if any(is_driver_seat(s) for s in seat_ids):
+        messages.error(request, "Seat 1 is reserved for the driver and cannot be assigned to a passenger.")
+        return redirect("admin_rebook_booking", booking_group_id=old.id)
+
     schedule = get_object_or_404(Schedule, id=int(schedule_id))
 
     bus_seats = Seat.objects.filter(bus=schedule.bus)
@@ -1407,7 +1783,11 @@ def admin_rebook_booking(request, booking_group_id):
             locked_old = BookingGroup.objects.select_for_update().get(pk=old.pk)
             if locked_old.status == "Cancelled":
                 raise ValueError("Booking was cancelled concurrently.")
-            existing = Booking.objects.filter(schedule=schedule, seat_number__in=seat_ids).exists()
+            existing = (
+                Booking.objects.filter(schedule=schedule, seat_number__in=seat_ids)
+                .exclude(status="Cancelled")
+                .exists()
+            )
             if existing:
                 raise ValueError("One or more seats are no longer available.")
 
@@ -1506,7 +1886,7 @@ def admin_cancel_booking(request, booking_group_id):
     else:
         messages.error(request, f'Booking Group #{booking_group.id} is already cancelled.')
     
-    return redirect('admin_bookings')
+    return redirect('admin_booking_detail', booking_group_id=booking_group.id)
 
 @login_required
 def user_profile(request):
@@ -1594,7 +1974,7 @@ def profile_edit(request):
             return render(request, 'NelsaApp/profile_edit.html', {'passenger': passenger, 'user': request.user})
 
         if not phone:
-            messages.error(request, "Phone number must start with +237 and be followed by 8-9 digits (example: +237699123456).")
+            messages.error(request, "Enter a valid Cameroon phone (e.g. 699123456). Country code +237 is added automatically.")
             return render(request, 'NelsaApp/profile_edit.html', {'passenger': passenger, 'user': request.user})
 
         try:
@@ -1606,7 +1986,8 @@ def profile_edit(request):
                 },
             )
         except IntegrityError:
-            messages.error(request, "That phone number is already used by another passenger. Please use a different number.")
+            logger.exception("profile_edit Passenger integrity error email=%s", passenger_email)
+            messages.error(request, "Could not save profile (data conflict). Try again or contact support.")
             return render(request, 'NelsaApp/profile_edit.html', {'passenger': passenger, 'user': request.user})
         
         # Update user information
@@ -1630,6 +2011,7 @@ def routes_page(request):
     View function for displaying available routes and schedules.
     """
     try:
+        sync_default_routes()
         routes = Route.objects.all().prefetch_related('schedules')
 
         for route in routes:
@@ -1787,8 +2169,19 @@ def admin_users(request):
                     )
                 elif action == 'make_staff':
                     user.is_staff = True
-                    user.save()
-                    messages.success(request, f'User {user.username} has been made staff.')
+                    user.save(update_fields=["is_staff"])
+                    if assign_staff_ops_group(user):
+                        messages.success(
+                            request,
+                            f'User {user.username} is now staff with booking confirm/cancel permissions.',
+                        )
+                    else:
+                        messages.success(request, f'User {user.username} has been made staff.')
+                        messages.warning(
+                            request,
+                            'Operations group not found — run migrations or assign '
+                            '"Operations Full" in Django admin so this user can confirm bookings.',
+                        )
                     log_admin_action(
                         request,
                         "user_make_staff",
@@ -1909,12 +2302,15 @@ def payment_page(request, booking_group_id):
         {
             'booking_group': booking_group,
             'checkout_token': checkout_q,
+            'flutterwave_checkout': flw.is_flutterwave_enabled(),
         },
     )
 
-@require_POST
 def start_payment(request, booking_group_id):
-    """Start payment by selected method and redirect to gateway instructions."""
+    """
+    POST: selected method -> redirect to MoMo/Orange/card instructions.
+    GET:  send back to payment-method page (bookmark/refresh used to return HTTP 405).
+    """
     booking_group = _get_booking_group_for_customer_checkout(request, booking_group_id)
 
     payment = _get_booking_group_payment(booking_group)
@@ -1922,8 +2318,16 @@ def start_payment(request, booking_group_id):
         messages.info(request, 'Payment for this booking has already been completed.')
         return _redirect_booking_success(request, booking_group.id)
 
+    checkout_from_get = (request.GET.get('checkout') or '').strip()
+
+    if request.method != 'POST':
+        pay = reverse('payment', args=[booking_group_id])
+        if checkout_from_get:
+            pay = f"{pay}?{urlencode({'checkout': checkout_from_get})}"
+        return redirect(pay)
+
     payment_method = (request.POST.get('payment_method') or '').strip().upper()
-    checkout_token = (request.POST.get('checkout') or '').strip()
+    checkout_token = (request.POST.get('checkout') or '').strip() or checkout_from_get
     valid_methods = [method[0] for method in Payment.PAYMENT_METHODS]
     if payment_method not in valid_methods:
         messages.error(request, 'Please select a valid payment method.')
@@ -1940,6 +2344,49 @@ def start_payment(request, booking_group_id):
         next_url = f"{next_url}?{urlencode({'checkout': checkout_token})}"
     return redirect(next_url)
 
+def _apply_flutterwave_success(
+    booking_group,
+    *,
+    payment_method: str,
+    transaction_id: str,
+    tx_ref: str | None = None,
+    provider_meta: dict | None = None,
+):
+    """Mark payment verified after Flutterwave (live, callback, or simulate)."""
+    submitter = "flutterwave"
+    details = {
+        "tx_ref": tx_ref,
+        "verified_at": timezone.now().isoformat(),
+        "verified_by": submitter,
+        "provider": "FLUTTERWAVE",
+    }
+    if provider_meta:
+        details["flutterwave"] = provider_meta
+
+    payment, _ = Payment.objects.get_or_create(
+        booking_group=booking_group,
+        defaults={
+            "amount": booking_group.total_amount,
+            "payment_method": payment_method,
+            "transaction_id": transaction_id,
+            "status": "COMPLETED",
+            "payment_details": details,
+        },
+    )
+    payment.amount = booking_group.total_amount
+    payment.payment_method = payment_method
+    payment.transaction_id = transaction_id
+    payment.status = "COMPLETED"
+    payment.payment_details = details
+    payment.save()
+
+    booking_group.transaction_id = transaction_id
+    booking_group.transaction_verified = True
+    booking_group.verified_at = timezone.now()
+    booking_group.status = "Pending"
+    booking_group.save(update_fields=["transaction_id", "transaction_verified", "verified_at", "status"])
+
+
 def process_payment(request, payment_method, booking_group_id):
     """View for processing payment with the selected method for a group of bookings."""
     booking_group = _get_booking_group_for_customer_checkout(request, booking_group_id)
@@ -1948,17 +2395,168 @@ def process_payment(request, payment_method, booking_group_id):
     if payment is not None and payment.status == 'COMPLETED':
         messages.info(request, 'Payment for this booking has already been completed.')
         return _redirect_booking_success(request, booking_group.id)
-    
-    # Validate payment method
+
     valid_methods = [method[0] for method in Payment.PAYMENT_METHODS]
     if payment_method not in valid_methods:
         messages.error(request, 'Invalid payment method selected.')
         return redirect('payment', booking_group_id=booking_group_id)
-    
+
+    checkout_token = (request.GET.get('checkout') or '').strip()
+
+    if flw.is_flutterwave_enabled():
+        ok, link, meta = flw.initialize_payment(
+            booking_group=booking_group,
+            payment_method=payment_method,
+            checkout_token=checkout_token,
+        )
+        if not ok:
+            err = (meta or {}).get("error") or "Could not start Flutterwave checkout."
+            messages.error(request, err)
+            pay_url = reverse('payment', args=[booking_group_id])
+            if checkout_token and not request.user.is_authenticated:
+                pay_url = f"{pay_url}?{urlencode({'checkout': checkout_token})}"
+            return redirect(pay_url)
+
+        tx_ref = meta.get("tx_ref")
+        Payment.objects.update_or_create(
+            booking_group=booking_group,
+            defaults={
+                "amount": booking_group.total_amount,
+                "payment_method": payment_method,
+                "transaction_id": tx_ref,
+                "status": "PENDING",
+                "payment_details": {
+                    "tx_ref": tx_ref,
+                    "flutterwave_init": meta,
+                    "payment_method": payment_method,
+                },
+            },
+        )
+
+        if link:
+            return redirect(link)
+
+        return render(
+            request,
+            'NelsaApp/payment_processing.html',
+            {
+                'booking_group': booking_group,
+                'payment_method': payment_method,
+                'payment_reference': tx_ref,
+                'flutterwave_simulate': True,
+                'checkout_token': checkout_token,
+                'payment_merchant_phone': settings.PAYMENT_MOMO_MERCHANT_PHONE,
+                'payment_merchant_name': settings.PAYMENT_MOMO_MERCHANT_NAME,
+            },
+        )
+
     return render(request, 'NelsaApp/payment_processing.html', {
         'booking_group': booking_group,
-        'payment_method': payment_method
+        'payment_method': payment_method,
+        'payment_merchant_phone': settings.PAYMENT_MOMO_MERCHANT_PHONE,
+        'payment_merchant_name': settings.PAYMENT_MOMO_MERCHANT_NAME,
+        'payment_reference': f"{getattr(settings, 'PAYMENT_REFERENCE_PREFIX', 'GAR')}{booking_group.id}",
+        'flutterwave_simulate': False,
+        'checkout_token': checkout_token,
     })
+
+
+def flutterwave_callback(request, booking_group_id):
+    """Return URL after Flutterwave hosted checkout."""
+    booking_group = _get_booking_group_for_customer_checkout(request, booking_group_id)
+
+    payment = _get_booking_group_payment(booking_group)
+    if payment is not None and payment.status == 'COMPLETED':
+        return _redirect_booking_success(request, booking_group.id)
+
+    tx_ref = (request.GET.get('tx_ref') or '').strip()
+    if not tx_ref and payment is not None:
+        details = payment.payment_details if isinstance(payment.payment_details, dict) else {}
+        tx_ref = str(details.get('tx_ref') or payment.transaction_id or '').strip()
+
+    status_param = (request.GET.get('status') or '').strip().lower()
+    if status_param == 'cancelled':
+        messages.warning(request, 'Payment was cancelled. You can try again when ready.')
+        pay_url = reverse('payment', args=[booking_group_id])
+        checkout_token = (request.GET.get('checkout') or '').strip()
+        if checkout_token and not request.user.is_authenticated:
+            pay_url = f"{pay_url}?{urlencode({'checkout': checkout_token})}"
+        return redirect(pay_url)
+
+    if not tx_ref:
+        messages.error(request, 'Missing payment reference from Flutterwave.')
+        return redirect('payment', booking_group_id=booking_group_id)
+
+    ok, tx_data = flw.verify_by_tx_ref(tx_ref)
+    if not ok:
+        err = (tx_data or {}).get("error") or "Payment could not be verified."
+        messages.error(request, err)
+        return redirect('payment', booking_group_id=booking_group_id)
+
+    payment_method = 'CARD'
+    if payment is not None:
+        payment_method = payment.payment_method
+        if isinstance(payment.payment_details, dict) and payment.payment_details.get('payment_method'):
+            payment_method = payment.payment_details['payment_method']
+
+    transaction_id = str(tx_data.get('id') or tx_data.get('flw_ref') or tx_ref)
+    _apply_flutterwave_success(
+        booking_group,
+        payment_method=payment_method,
+        transaction_id=transaction_id,
+        tx_ref=tx_ref,
+        provider_meta=tx_data,
+    )
+    messages.success(
+        request,
+        'Payment received via Flutterwave. Your booking is pending staff confirmation — you will get WhatsApp and email when confirmed.',
+    )
+    return _redirect_booking_success(request, booking_group.id)
+
+
+@require_POST
+def flutterwave_simulate_pay(request, booking_group_id):
+    """Local/test: simulate a successful Flutterwave payment without API keys."""
+    if not flw.is_simulate_mode():
+        return JsonResponse({'success': False, 'message': 'Simulate mode is disabled.'}, status=403)
+
+    booking_group = _get_booking_group_for_customer_checkout(request, booking_group_id)
+    payment = _get_booking_group_payment(booking_group)
+    if payment is not None and payment.status == 'COMPLETED':
+        return JsonResponse({'success': True, 'redirect_url': _booking_success_url(request, booking_group.id)})
+
+    try:
+        data = json.loads(request.body or b'{}')
+    except json.JSONDecodeError:
+        data = {}
+
+    payment_method = (data.get('payment_method') or (payment.payment_method if payment else '') or 'CARD').strip().upper()
+    details = payment.payment_details if payment and isinstance(payment.payment_details, dict) else {}
+    tx_ref = str(data.get('tx_ref') or details.get('tx_ref') or flw.build_tx_ref(booking_group.id))
+    transaction_id = f"FLW-TEST-{tx_ref}"
+
+    _apply_flutterwave_success(
+        booking_group,
+        payment_method=payment_method,
+        transaction_id=transaction_id,
+        tx_ref=tx_ref,
+        provider_meta={"simulate": True},
+    )
+
+    return JsonResponse(
+        {
+            'success': True,
+            'message': 'Simulated Flutterwave payment successful.',
+            'redirect_url': _booking_success_url(request, booking_group.id),
+        }
+    )
+
+
+def _booking_success_url(request, booking_group_id: int) -> str:
+    params = {'bg': str(int(booking_group_id))}
+    if not request.user.is_authenticated:
+        params['checkout'] = sign_checkout_token(int(booking_group_id))
+    return reverse('booking_success') + '?' + urlencode(params)
 
 def verify_payment(request):
     """User submits payment proof; final verification is done by provider webhook."""
@@ -2204,6 +2802,7 @@ def _process_payment_event(payload: dict, event: PaymentWebhookEvent) -> None:
     booking_group.transaction_verified = True
     booking_group.verified_at = timezone.now()
     booking_group.save(update_fields=["transaction_id", "transaction_verified", "verified_at"])
+    # Booking stays Pending until staff confirms in admin (manual MoMo flow). SMS/email fire on admin confirm.
 
 
 def _mark_webhook_failed(event: PaymentWebhookEvent, exc: Exception, *, status: str = "REJECTED") -> None:
@@ -2252,20 +2851,28 @@ def payment_webhook(request):
         return JsonResponse({"success": False, "message": "Invalid request method"}, status=405)
 
     raw_body = request.body or b""
-    webhook_secret = (getattr(settings, "PAYMENT_WEBHOOK_SECRET", "") or "").strip()
     received_secret = (request.headers.get("X-Payment-Webhook-Secret", "") or "").strip()
-
-    if not webhook_secret:
-        return JsonResponse({"success": False, "message": "Webhook secret not configured"}, status=500)
-    if not received_secret or not secrets.compare_digest(received_secret, webhook_secret):
-        return JsonResponse({"success": False, "message": "Unauthorized webhook"}, status=401)
-    if not _verify_payment_webhook_hmac(request, raw_body):
-        return JsonResponse({"success": False, "message": "Invalid body signature"}, status=401)
 
     try:
         payload = json.loads(raw_body or b"{}")
     except json.JSONDecodeError:
         return JsonResponse({"success": False, "message": "Invalid JSON payload"}, status=400)
+
+    flutterwave_native = False
+    normalized = flw.normalize_flutterwave_webhook(payload)
+    if normalized:
+        flutterwave_native = True
+        payload = normalized
+        if not _verify_provider_signature("FLUTTERWAVE", request, raw_body):
+            return JsonResponse({"success": False, "message": "Flutterwave signature verification failed"}, status=401)
+    else:
+        webhook_secret = (getattr(settings, "PAYMENT_WEBHOOK_SECRET", "") or "").strip()
+        if not webhook_secret:
+            return JsonResponse({"success": False, "message": "Webhook secret not configured"}, status=500)
+        if not received_secret or not secrets.compare_digest(received_secret, webhook_secret):
+            return JsonResponse({"success": False, "message": "Unauthorized webhook"}, status=401)
+        if not _verify_payment_webhook_hmac(request, raw_body):
+            return JsonResponse({"success": False, "message": "Invalid body signature"}, status=401)
 
     event_id = str(payload.get("event_id") or "").strip()
     provider = str(payload.get("provider") or "GENERIC").strip().upper()
@@ -2273,11 +2880,12 @@ def payment_webhook(request):
     if not event_id:
         return JsonResponse({"success": False, "message": "Missing event_id"}, status=400)
 
-    if not _verify_provider_signature(provider, request, raw_body):
-        return JsonResponse({"success": False, "message": "Provider signature verification failed"}, status=401)
-    replay_ok, replay_reason = _verify_webhook_replay_window(request, provider)
-    if not replay_ok:
-        return JsonResponse({"success": False, "message": replay_reason}, status=409)
+    if not flutterwave_native:
+        if not _verify_provider_signature(provider, request, raw_body):
+            return JsonResponse({"success": False, "message": "Provider signature verification failed"}, status=401)
+        replay_ok, replay_reason = _verify_webhook_replay_window(request, provider)
+        if not replay_ok:
+            return JsonResponse({"success": False, "message": replay_reason}, status=409)
 
     event_kind = _resolve_event_kind(payload)
     transaction_id = str(payload.get("transaction_id") or "").strip()
@@ -2366,7 +2974,7 @@ def verify_sms_receipt(request, code: str):
     seats = sorted(booking_group.bookings.values_list("seat_number", flat=True))
     departure_local = timezone.localtime(booking_group.schedule.departure_time)
 
-    company = getattr(settings, "COMPANY_NAME", "MOGHAMO EXPRESS")
+    company = getattr(settings, "COMPANY_NAME", "GARANTI EXPRESS")
 
     return JsonResponse(
         {
@@ -2797,36 +3405,52 @@ def admin_buses(request):
 def admin_bus_detail(request, bus_id):
     """View detailed information about a specific bus."""
     bus = get_object_or_404(Bus, id=bus_id)
-    
-    # Get bus schedules
-    schedules = Schedule.objects.filter(bus=bus).select_related('route').order_by('-departure_time')
-    
-    # Get bus statistics
-    total_schedules = schedules.count()
-    upcoming_schedules = schedules.filter(departure_time__gte=timezone.now()).count()
-    past_schedules = schedules.filter(departure_time__lt=timezone.now()).count()
-    
-    # Get bookings for this bus
-    bookings = Booking.objects.filter(schedule__bus=bus).select_related('passenger', 'schedule__route').order_by('-booking_date')
-    total_bookings = bookings.count()
-    confirmed_bookings = bookings.filter(status='Confirmed').count()
-    
-    # Calculate utilization
+
+    booking_manifest_prefetch = Prefetch(
+        "booking_set",
+        queryset=Booking.objects.select_related("passenger")
+        .filter(status__in=["Confirmed", "Pending"])
+        .order_by("seat_number"),
+    )
+    schedules_qs = (
+        Schedule.objects.filter(bus=bus)
+        .select_related("route")
+        .prefetch_related(booking_manifest_prefetch)
+        .order_by("-departure_time")
+    )
+
+    all_schedules = list(schedules_qs)
+    schedules = all_schedules[:10]
+    trip_manifests = all_schedules
+
+    total_schedules = len(all_schedules)
+    now = timezone.now()
+    upcoming_schedules = sum(1 for s in all_schedules if s.departure_time >= now)
+    past_schedules = total_schedules - upcoming_schedules
+
+    bookings_qs = Booking.objects.filter(schedule__bus=bus).select_related(
+        "passenger", "schedule__route"
+    ).order_by("-booking_date")
+    total_bookings = bookings_qs.count()
+    confirmed_bookings = bookings_qs.filter(status="Confirmed").count()
+
     utilization_percentage = min((total_bookings / 60) * 100, 100) if total_bookings > 0 else 0
-    
+
     context = {
-        'bus_detail': bus,
-        'schedules': schedules[:10],  # Show only last 10 schedules
-        'bookings': bookings[:10],    # Show only last 10 bookings
-        'total_schedules': total_schedules,
-        'upcoming_schedules': upcoming_schedules,
-        'past_schedules': past_schedules,
-        'total_bookings': total_bookings,
-        'confirmed_bookings': confirmed_bookings,
-        'utilization_percentage': round(utilization_percentage, 1),
+        "bus_detail": bus,
+        "schedules": schedules,
+        "trip_manifests": trip_manifests,
+        "bookings": list(bookings_qs[:10]),
+        "total_schedules": total_schedules,
+        "upcoming_schedules": upcoming_schedules,
+        "past_schedules": past_schedules,
+        "total_bookings": total_bookings,
+        "confirmed_bookings": confirmed_bookings,
+        "utilization_percentage": round(utilization_percentage, 1),
+        "now": now,
     }
-    
-    return render(request, 'NelsaApp/admin_bus_detail.html', context)
+
+    return render(request, "NelsaApp/admin_bus_detail.html", context)
 
 @login_required
 @require_perm("manage_routes_schedules")
@@ -3318,11 +3942,11 @@ def admin_support(request):
             #if response and support.email:
                 #try:
                     # Create a clean, readable email template without any encryption
-                    #email_subject = f"Re: {support.subject} - MOGHAMO EXPRESS Support"
+                    #email_subject = f"Re: {support.subject} - GARANTI EXPRESS Support"
                     #email_body = f"""
 #Dear {support.name},
 
-#Thank you for contacting MOGHAMO EXPRESS support.
+#Thank you for contacting GARANTI EXPRESS support.
 
 #Your original message:
 #Subject: {support.subject}
@@ -3334,8 +3958,8 @@ def admin_support(request):
 #If you have any further questions, please don't hesitate to contact us.
 
 #Best regards,
-#MOGHAMO EXPRESS Support Team
-#support@moghamoexpress.com
+#GARANTI EXPRESS Support Team
+#support@garantiexpress.com
 #+237675315422
 
 #---
